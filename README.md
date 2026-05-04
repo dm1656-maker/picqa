@@ -21,17 +21,22 @@ silicon photonic process runs. Designed around the HY202103 dataset format
 - **Wafer-level uniformity (project 1)**: center-vs-edge comparison,
   radial dependence, FSR-to-index-variation mapping, IV uniformity
 - **V-phi extraction (project 2)**: Vπ, Vπ·L, and extinction ratio derived
-  from the bias-dependent notch shift, computed at each measurement's own
-  design wavelength
+  from the bias-dependent notch shift; six-panel detailed analysis figure
+- **Cross-parameter efficiency analysis**: combines all measured parameters
+  into a single per-die EfficiencyScore (0–1), identifies sweet-spot
+  positions consistently producing best devices across wafers
 - **Spec-based yield calculation** from a YAML rule file
 - **Automatic failed-contact detection** via leakage + tuning-slope thresholds
 - **Publication-quality plots**: IV curves, transmission spectra, bias-shift
   comparisons, wafer maps, six-panel MZM summary, PN length-dependence,
   PN trade-off summary, radial-IL trend, center-vs-edge boxplots, V-φ curves,
-  Vπ distribution
+  Vπ distribution, six-panel V-π·L analysis, **efficiency wafer map**,
+  **sweet-spot map**
 - **Markdown report generator** that bundles inventory, statistics,
   yield results, MZM features, PN features, project-1 uniformity, project-2
-  V-phi, and figures into one file
+  V-phi, **efficiency analysis**, and figures into one file (14 figures + 16 CSVs)
+- **Per-die inspection commands**: `picqa show` and `picqa list` for
+  fast terminal-based browsing of measurements
 - **CLI** for every operation — no GUI, no notebook required
 
 ## Installation

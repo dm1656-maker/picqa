@@ -208,6 +208,228 @@ def cmd_plot(args: argparse.Namespace) -> int:
     return 0
 
 
+def _resolve_die(
+    measurements: list,
+    wafer: str,
+    die: str,
+    *,
+    band: str | None = None,
+    session: str | None = None,
+) -> object | None:
+    """Find a single measurement matching wafer/die (and optional band/session).
+
+    Returns the matching Measurement, or prints disambiguation hints and
+    returns None if zero or multiple matches are found.
+    """
+    # Normalise die spec: accept "(0,0)", "0,0", "0 0"
+    die_norm = die.strip().lstrip("(").rstrip(")").replace(" ", "").replace(",", ",")
+
+    candidates = [
+        m for m in measurements
+        if m.wafer == wafer and m.die.lstrip("(").rstrip(")") == die_norm
+    ]
+    if band:
+        band_upper = band.upper()
+        candidates = [m for m in candidates if m.band == band_upper]
+    if session:
+        candidates = [m for m in candidates if session in m.session]
+
+    if not candidates:
+        print(f"No measurement found for {wafer}/({die_norm})", file=sys.stderr)
+        if band:
+            print(f"  (filtered by band={band})", file=sys.stderr)
+        return None
+
+    if len(candidates) > 1:
+        print(f"Multiple matches for {wafer}/({die_norm}):", file=sys.stderr)
+        for c in candidates:
+            print(f"  - band={c.band or '?'}  session={c.session}  "
+                  f"test_site={c.test_site}  device={c.device_name}",
+                  file=sys.stderr)
+        print("Disambiguate with --band O|C or --session <substring>",
+              file=sys.stderr)
+        return None
+
+    return candidates[0]
+
+
+def cmd_show(args: argparse.Namespace) -> int:
+    """Show one die's data or one of its plots.
+
+    Examples
+    --------
+    picqa show <data-dir> D08 "(0,0)"
+    picqa show <data-dir> D08 "(0,0)" --plot vpi_analysis
+    picqa show <data-dir> D08 "(0,0)" --band C --plot bias_shift
+    """
+    # Parse all MZM sites by default; user can narrow with --test-site
+    if args.test_site:
+        test_sites = [args.test_site]
+    else:
+        test_sites = list(MZM_TEST_SITES)
+
+    measurements = parse_directory(args.data_dir, test_site=test_sites)
+    target = _resolve_die(
+        measurements, args.wafer, args.die,
+        band=args.band, session=args.session,
+    )
+    if target is None:
+        return 1
+
+    # Print metadata table
+    print()
+    print(f"  Wafer:               {target.wafer}")
+    print(f"  Die:                 {target.die}")
+    print(f"  Band:                {target.band or 'unknown'}")
+    print(f"  Design wavelength:   {target.design_wavelength_nm} nm")
+    print(f"  Test site:           {target.test_site}")
+    print(f"  Device:              {target.device_name}")
+    print(f"  Session:             {target.session}")
+    print(f"  Source file:         {target.source_path}")
+    print(f"  IV present:          {'yes' if target.iv else 'no'}")
+    print(f"  # wavelength sweeps: {len(target.sweeps)}")
+    if target.sweeps:
+        biases = sorted(s.dc_bias_v for s in target.sweeps)
+        print(f"  Bias points:         {biases}")
+        sw0 = target.sweeps[0]
+        print(f"  Wavelength range:    "
+              f"{sw0.wavelength_nm.min():.2f}–{sw0.wavelength_nm.max():.2f} nm "
+              f"({sw0.wavelength_nm.size} pts)")
+    if target.iv is not None:
+        v = target.iv.voltage
+        i = target.iv.current
+        print(f"  IV voltage range:    {v.min():.2f} to {v.max():.2f} V "
+              f"({v.size} pts)")
+        print(f"  |I| at -1 V:         {abs(target.iv.at(-1.0))*1e12:.2f} pA")
+        print(f"  |I| at -2 V:         {abs(target.iv.at(-2.0))*1e12:.2f} pA")
+    print()
+
+    # Extracted features for this die (if MZM-shaped)
+    if target.test_site in MZM_TEST_SITES:
+        from picqa.extract.mzm import extract_one
+        feat = extract_one(target)
+        if feat is not None:
+            print("  Extracted MZM features:")
+            print(f"    FSR:                 {feat.fsr_nm:.3f} nm")
+            print(f"    Notch @ 0V:          {feat.notch_at_0v_nm:.3f} nm")
+            print(f"    dλ/dV:               {feat.dlambda_dv_pm_per_v:.2f} pm/V")
+            print(f"    Peak IL:             {feat.peak_il_db:.2f} dB")
+        # V-pi if extractable
+        try:
+            from picqa.analysis.phase_extraction import (
+                parse_phaseshifter_length_um,
+                vpi_from_slope,
+            )
+            slope_nm = (feat.dlambda_dv_pm_per_v / 1000.0) if feat else float("nan")
+            vpi = vpi_from_slope(slope_nm, feat.fsr_nm) if feat else float("nan")
+            L_um = parse_phaseshifter_length_um(target.device_name)
+            if not (vpi != vpi):  # not NaN
+                print(f"    Vπ:                  {vpi:.2f} V")
+            if not (L_um != L_um) and not (vpi != vpi):
+                print(f"    Vπ·L:                {vpi * L_um * 1e-4:.3f} V·cm  "
+                      f"(L = {L_um:.0f} µm)")
+        except Exception:
+            pass
+        print()
+
+    # Optional plot
+    if args.plot:
+        if not args.output:
+            args.output = f"{target.wafer}_{target.die}_{args.plot}.png".replace(
+                "(", "").replace(")", "").replace(",", "_")
+        out = Path(args.output)
+
+        if args.plot == "bias_shift":
+            from picqa.viz.spectrum_plot import plot_bias_shift
+            plot_bias_shift(target, out)
+        elif args.plot == "vpi_analysis":
+            from picqa.viz.vpi_analysis import plot_vpi_analysis
+            plot_vpi_analysis(target, out)
+        elif args.plot == "vphi":
+            from picqa.viz.uniformity_plot import plot_vphi_curve
+            plot_vphi_curve(target, out)
+        elif args.plot == "iv":
+            import matplotlib.pyplot as plt
+            import numpy as np
+            if target.iv is None:
+                print("No IV data for this die", file=sys.stderr)
+                return 1
+            fig, ax = plt.subplots(figsize=(7, 4.5))
+            ax.semilogy(target.iv.voltage,
+                        np.abs(target.iv.current) + 1e-13,
+                        "ko-", markersize=5, lw=0.8)
+            ax.set_xlabel("Voltage (V)")
+            ax.set_ylabel("|Current| (A)")
+            ax.set_title(f"IV: {target.wafer}/{target.die} ({target.band}-band)")
+            ax.grid(alpha=0.3, which="both")
+            fig.tight_layout()
+            fig.savefig(out, dpi=130, bbox_inches="tight")
+            plt.close(fig)
+        elif args.plot == "spectrum":
+            import matplotlib.pyplot as plt
+            fig, ax = plt.subplots(figsize=(9, 5))
+            for sw in sorted(target.sweeps, key=lambda s: s.dc_bias_v):
+                ax.plot(sw.wavelength_nm, sw.insertion_loss_db, lw=0.8,
+                        label=f"{sw.dc_bias_v:+.1f} V")
+            ax.set_xlabel("Wavelength (nm)")
+            ax.set_ylabel("IL (dB)")
+            ax.set_title(f"Spectra: {target.wafer}/{target.die}")
+            ax.legend(fontsize=8, ncol=2)
+            ax.grid(alpha=0.3)
+            fig.tight_layout()
+            fig.savefig(out, dpi=130, bbox_inches="tight")
+            plt.close(fig)
+        else:
+            print(f"Unknown plot kind: {args.plot}", file=sys.stderr)
+            return 2
+
+        print(f"Plot saved → {out}")
+
+    return 0
+
+
+def cmd_list(args: argparse.Namespace) -> int:
+    """List dies in the dataset, optionally filtered.
+
+    Examples
+    --------
+    picqa list <data-dir>                  # all MZM measurements
+    picqa list <data-dir> D07              # only D07 dies
+    picqa list <data-dir> --working-only   # skip failed-contact dies
+    picqa list <data-dir> --band C
+    """
+    measurements = parse_directory(args.data_dir, test_site=list(MZM_TEST_SITES))
+
+    if args.wafer:
+        measurements = [m for m in measurements if m.wafer == args.wafer]
+    if args.band:
+        measurements = [m for m in measurements if m.band == args.band.upper()]
+
+    if args.working_only:
+        # Quick test: leakage at -1V > 1 nA
+        measurements = [
+            m for m in measurements
+            if m.iv is not None and abs(m.iv.at(-1.0)) > 1e-9
+        ]
+
+    if not measurements:
+        print("No measurements match those filters.")
+        return 0
+
+    # Pretty table
+    print(f"{'Wafer':<6} {'Die':<10} {'Band':<5} {'Session':<22} "
+          f"{'Device':<24} {'|I@-1V|':>12}")
+    print("-" * 88)
+    for m in measurements:
+        leak_pa = abs(m.iv.at(-1.0)) * 1e12 if m.iv else float("nan")
+        leak_str = f"{leak_pa:>10.1f} pA" if leak_pa == leak_pa else "        n/a"
+        print(f"{m.wafer:<6} {m.die:<10} {m.band or '?':<5} "
+              f"{m.session:<22} {m.device_name[:24]:<24} {leak_str:>12}")
+
+    print(f"\n{len(measurements)} measurements")
+    return 0
+
+
 def cmd_yield(args: argparse.Namespace) -> int:
     df = pd.read_csv(args.features)
     spec = load_spec(args.spec, args.family)
@@ -223,6 +445,97 @@ def cmd_yield(args: argparse.Namespace) -> int:
         summary.to_csv(summary_path, index=False)
         print(f"Per-die → {out}")
         print(f"Summary → {summary_path}")
+    return 0
+
+
+def cmd_efficiency(args: argparse.Namespace) -> int:
+    """Combine multiple parameters into a per-die efficiency score and
+    identify wafer positions that consistently produce best devices.
+
+    The default workflow merges MZM features with Vπ / ER from the phase
+    extractor (when available) and writes:
+
+    * efficiency_scored.csv      — every die with score columns
+    * top_dies.csv               — top-N dies overall
+    * position_summary.csv       — by-region / quadrant / radius stats
+    * sweet_spots.csv            — positions consistently in the top tier
+    * efficiency_wafermap.png    — colour map of EfficiencyScore per wafer
+    * sweet_spots.png            — sweet-spot positions across wafers
+    """
+    from picqa.analysis.efficiency_map import (
+        EfficiencyConfig,
+        best_dies,
+        compute_efficiency_score,
+        find_sweet_spots,
+        plot_efficiency_wafermap,
+        plot_sweet_spots,
+        position_summary,
+    )
+
+    out_dir = Path(args.output_dir)
+    out_dir.mkdir(parents=True, exist_ok=True)
+
+    features = pd.read_csv(args.features)
+    if "FailedContact" in features.columns and not args.include_failed:
+        features = features[~features["FailedContact"]].copy()
+
+    # Try to merge phase features for richer scoring
+    if args.phase:
+        try:
+            phase = pd.read_csv(args.phase)
+            keys = ["Wafer", "Session", "Die"]
+            extra_cols = [c for c in ["Vpi_V", "Vpi_L_V_cm",
+                                      "ER_at_-2V_dB", "ER_at_0V_dB"]
+                          if c in phase.columns]
+            if extra_cols:
+                phase_subset = phase[keys + extra_cols]
+                features = features.merge(phase_subset, on=keys, how="left")
+                print(f"Merged phase columns: {extra_cols}")
+        except FileNotFoundError:
+            print(f"Warning: phase file not found at {args.phase}, "
+                  f"continuing without Vπ/ER", file=sys.stderr)
+
+    # Build config (allow per-wafer normalisation via flag)
+    config = EfficiencyConfig()
+    group_by = ["Wafer", "Band"] if args.normalise_per_wafer and "Band" in features.columns else None
+    scored = compute_efficiency_score(features, config=config, group_by=group_by)
+
+    # Save outputs
+    scored.to_csv(out_dir / "efficiency_scored.csv", index=False)
+    top = best_dies(scored, n=args.top_n)
+    top.to_csv(out_dir / "top_dies.csv", index=False)
+    pos = position_summary(scored)
+    pos.to_csv(out_dir / "position_summary.csv", index=False)
+    sweet = find_sweet_spots(scored, threshold_pct=args.threshold,
+                             min_consistency=args.min_consistency)
+    sweet.to_csv(out_dir / "sweet_spots.csv", index=False)
+
+    plot_efficiency_wafermap(scored, out_dir / "efficiency_wafermap.png")
+    plot_sweet_spots(sweet, out_dir / "sweet_spots.png")
+
+    # Print headline info
+    print(f"\n=== Efficiency analysis ===")
+    print(f"Scored {len(scored)} dies")
+    print(f"\nTop {args.top_n} dies:")
+    cols = [c for c in ["Wafer", "Die", "Band", "Vpi_V",
+                        "ER_at_-2V_dB", "PeakIL_dB",
+                        "I_at_-1V_pA", "EfficiencyScore"]
+            if c in top.columns]
+    print(top[cols].to_string(index=False))
+
+    print(f"\nPosition summary:")
+    print(pos.to_string(index=False))
+
+    print(f"\nSweet spots (top {len(sweet[sweet['is_sweet_spot']])} consistent positions):")
+    sweet_only = sweet[sweet["is_sweet_spot"]]
+    if not sweet_only.empty:
+        print(sweet_only[["DieCol", "DieRow", "n_wafers_top",
+                          "n_wafers_total", "mean_score",
+                          "consistency_pct"]].to_string(index=False))
+    else:
+        print("(none — try lowering --threshold or --min-consistency)")
+
+    print(f"\nAll outputs saved to {out_dir}")
     return 0
 
 
@@ -382,6 +695,58 @@ def build_parser() -> argparse.ArgumentParser:
     sp.add_argument("data_dir")
     sp.add_argument("--output", "-o", default=None)
     sp.set_defaults(func=cmd_phase)
+
+    # efficiency (cross-parameter scoring + sweet-spot map)
+    sp = sub.add_parser("efficiency",
+                        help="combine all parameters into one die-quality score")
+    sp.add_argument("features",
+                    help="MZM features CSV from `picqa extract mzm`")
+    sp.add_argument("--phase", default=None,
+                    help="optional phase features CSV (adds Vπ, ER to the score)")
+    sp.add_argument("--output-dir", "-o", required=True)
+    sp.add_argument("--top-n", type=int, default=10,
+                    help="how many top dies to list (default 10)")
+    sp.add_argument("--threshold", type=float, default=75.0,
+                    help="percentile threshold for sweet-spot detection (default 75)")
+    sp.add_argument("--min-consistency", type=int, default=2,
+                    help="number of wafers a position must be in the top tier "
+                         "to count as a sweet spot (default 2)")
+    sp.add_argument("--normalise-per-wafer", action="store_true",
+                    help="normalise each metric within (Wafer, Band) groups so "
+                         "absolute differences between wafers don't dominate")
+    sp.add_argument("--include-failed", action="store_true",
+                    help="include FailedContact dies in the scoring")
+    sp.set_defaults(func=cmd_efficiency)
+
+    # show (per-die inspection)
+    sp = sub.add_parser("show",
+                        help="show one die's data and optionally plot it")
+    sp.add_argument("data_dir")
+    sp.add_argument("wafer", help="wafer ID, e.g. D08")
+    sp.add_argument("die", help="die coordinate, e.g. (0,0) or 0,0")
+    sp.add_argument("--band", default=None, choices=["O", "C", "L", "S", "E", "U"],
+                    help="disambiguate when a die exists in multiple bands")
+    sp.add_argument("--session", default=None,
+                    help="filter by session substring")
+    sp.add_argument("--test-site", default=None,
+                    help="restrict to one test site (default: all MZM sites)")
+    sp.add_argument("--plot", default=None,
+                    choices=["bias_shift", "vpi_analysis", "vphi", "iv", "spectrum"],
+                    help="also save a plot of this kind")
+    sp.add_argument("--output", "-o", default=None,
+                    help="output PNG path (auto-named if omitted)")
+    sp.set_defaults(func=cmd_show)
+
+    # list (browse / filter dies)
+    sp = sub.add_parser("list",
+                        help="list MZM dies, optionally filtered")
+    sp.add_argument("data_dir")
+    sp.add_argument("wafer", nargs="?", default=None,
+                    help="optional wafer ID to filter by")
+    sp.add_argument("--band", default=None, choices=["O", "C", "L", "S", "E", "U"])
+    sp.add_argument("--working-only", action="store_true",
+                    help="skip dies whose contact was bad (|I@-1V| < 1 nA)")
+    sp.set_defaults(func=cmd_list)
 
     return p
 
