@@ -273,6 +273,50 @@ def generate_report(
         import logging
         logging.getLogger(__name__).warning("Phase extraction skipped: %s", exc)
 
+    # Cross-parameter efficiency analysis (combines MZM + phase metrics)
+    efficiency_df = pd.DataFrame()
+    sweet_df = pd.DataFrame()
+    pos_df = pd.DataFrame()
+    try:
+        from picqa.analysis.efficiency_map import (
+            compute_efficiency_score,
+            find_sweet_spots,
+            plot_efficiency_wafermap,
+            plot_sweet_spots,
+            position_summary,
+        )
+        # Merge phase columns into features for richer scoring
+        scoring_input = features.copy()
+        if not phase_df.empty:
+            keys = ["Wafer", "Session", "Die"]
+            extra_cols = [c for c in ["Vpi_V", "Vpi_L_V_cm",
+                                      "ER_at_-2V_dB", "ER_at_0V_dB"]
+                          if c in phase_df.columns]
+            if extra_cols:
+                scoring_input = scoring_input.merge(
+                    phase_df[keys + extra_cols], on=keys, how="left",
+                )
+        # Skip failed-contact dies for fair scoring
+        if "FailedContact" in scoring_input.columns:
+            scoring_input = scoring_input[~scoring_input["FailedContact"]].copy()
+
+        if not scoring_input.empty:
+            efficiency_df = compute_efficiency_score(scoring_input)
+            efficiency_df.to_csv(out_dir / "efficiency_scored.csv", index=False)
+            pos_df = position_summary(efficiency_df)
+            pos_df.to_csv(out_dir / "position_summary.csv", index=False)
+            sweet_df = find_sweet_spots(efficiency_df)
+            sweet_df.to_csv(out_dir / "sweet_spots.csv", index=False)
+            fig_paths["efficiency_map"] = plot_efficiency_wafermap(
+                efficiency_df, fig_dir / "efficiency_wafermap.png",
+            )
+            fig_paths["sweet_spots"] = plot_sweet_spots(
+                sweet_df, fig_dir / "sweet_spots.png",
+            )
+    except Exception as exc:
+        import logging
+        logging.getLogger(__name__).warning("Efficiency analysis skipped: %s", exc)
+
     # Statistics
     stats = per_group_stats(features, group_by=["Wafer", "Session"], metrics=METRICS_FOR_STATS)
     stats.to_csv(out_dir / "stats_per_session.csv", index=False)
@@ -403,6 +447,57 @@ def generate_report(
             lines.append(_df_to_md(flat))
             lines.append("")
 
+    # Cross-parameter efficiency
+    if not efficiency_df.empty:
+        lines.append("## Cross-parameter efficiency analysis")
+        lines.append("")
+        lines.append(
+            "Each parameter is normalised to a 0–1 score (1 = best in this dataset) "
+            "and combined with the default weights "
+            "(Vπ ×2, ER ×1.5, IL ×1, leakage ×1, FSR ×0.5) into a single "
+            "**EfficiencyScore** per die. Scoring is robust to a few outliers "
+            "(uses the 5–95th percentile range), and dies with NaN metrics get "
+            "the remaining weights re-distributed."
+        )
+        lines.append("")
+        lines.append("### Top dies overall")
+        lines.append("")
+        top_n = efficiency_df.dropna(
+            subset=["EfficiencyScore"]
+        ).nlargest(10, "EfficiencyScore")
+        cols_show = [c for c in ["Wafer", "Die", "Band", "Vpi_V",
+                                 "ER_at_-2V_dB", "PeakIL_dB",
+                                 "I_at_-1V_pA", "EfficiencyScore"]
+                     if c in top_n.columns]
+        lines.append(_df_to_md(top_n[cols_show]))
+        lines.append("")
+        if not pos_df.empty:
+            lines.append("### Position summary (mean efficiency by region)")
+            lines.append("")
+            lines.append(_df_to_md(pos_df.round(3)))
+            lines.append("")
+        if not sweet_df.empty:
+            sweet_only = sweet_df[sweet_df["is_sweet_spot"]]
+            if not sweet_only.empty:
+                lines.append(
+                    "### Sweet spots — positions in the top tier on ≥ 2 wafers"
+                )
+                lines.append("")
+                lines.append(
+                    _df_to_md(sweet_only[["DieCol", "DieRow", "n_wafers_top",
+                                          "n_wafers_total", "mean_score",
+                                          "consistency_pct"]].round(3))
+                )
+                lines.append("")
+                lines.append(
+                    "**Interpretation:** these die positions consistently "
+                    "produce devices in the upper quartile of efficiency "
+                    "across multiple wafers, suggesting that the process "
+                    "favours these locations. Keeping such dies preferentially "
+                    "during binning would raise overall yield."
+                )
+                lines.append("")
+
     # PN modulator section
     if not pn_seg_df.empty:
         lines.append("## PN modulator (PCM_PSLOTE_P1N1) analysis")
@@ -466,6 +561,14 @@ def generate_report(
     if fig_paths.get("vpi_dist"):
         lines.append("### (Project 2) Vπ distribution and Vπ·L figure of merit")
         lines.append(f"![Vπ distribution]({fig_paths['vpi_dist'].relative_to(out_dir)})")
+        lines.append("")
+    if fig_paths.get("efficiency_map"):
+        lines.append("### Cross-parameter efficiency map")
+        lines.append(f"![Efficiency map]({fig_paths['efficiency_map'].relative_to(out_dir)})")
+        lines.append("")
+    if fig_paths.get("sweet_spots"):
+        lines.append("### Sweet-spot map")
+        lines.append(f"![Sweet spots]({fig_paths['sweet_spots'].relative_to(out_dir)})")
         lines.append("")
 
     md_path = out_dir / "report.md"
