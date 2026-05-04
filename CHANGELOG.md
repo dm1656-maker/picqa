@@ -1,5 +1,24 @@
 # Changelog
 
+## [1.5.0] — Cross-parameter efficiency analysis
+- New `picqa.analysis.efficiency_map` module combines all measured
+  parameters into one **EfficiencyScore** per die (0-1)
+- Robust 5-95th percentile min-max normalisation per metric, configurable
+  weights and directions via `EfficiencyConfig`
+- **Sweet-spot detection**: identifies die positions that consistently
+  appear in the top tier across multiple wafers (process-favoured locations)
+- Position summary by region (center/edge), quadrant (NE/NW/SE/SW), and
+  radius bin
+- New CLI: `picqa efficiency <features.csv> --phase <phase.csv> -o <dir>`
+  with --top-n, --threshold, --min-consistency, --normalise-per-wafer flags
+- Two new visualisations: `efficiency_wafermap.png` (per-wafer score map)
+  and `sweet_spots.png` (consistency + mean score across wafers)
+- Auto-included in `picqa report`: 14 figures + 16 CSVs + 10 sections
+- 12 new tests (52 total)
+- Findings on HY202103: sweet spots at (0,3), (0,-3), (2,0) — top tier
+  on 3 of 4 wafers (75% consistency); SW quadrant is weakest
+
+
 ## [1.4.0] — Detailed V-π·L analysis figure
 - New `picqa/viz/vpi_analysis.py` reproduces the six-panel V-φ analysis
   figure used in production silicon photonic characterisation pipelines:
