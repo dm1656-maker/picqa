@@ -1,5 +1,23 @@
 # Changelog
 
+## [1.6.1] — Cleaner multi-die spectrum plot
+- `plot_spectra_grid` rewritten with three display modes:
+  - `median_band` (new default): bold median spectrum + 5-95 percentile
+    band — clean envelope visualisation, easy to compare across sessions
+  - `overlay`: all dies in distinct colours + thick black median curve;
+    keeps the original visual but with the median highlighted on top
+  - `single`: one representative die per session, picked closest to (0,0);
+    the cleanest and easiest visual for direct comparison
+- Auto-derives x-axis range from each session's design wavelength so
+  O-band and C-band spectra both render correctly
+- Now accepts both DCM_LMZO and DCM_LMZC by default; previously
+  hard-coded to O-band only
+- `picqa report` now generates two spectrum figures: spectra.png
+  (median_band) and spectra_single.png (single)
+- `picqa plot spectra --spectra-mode {median_band|overlay|single}`
+  exposes mode selection via CLI
+
+
 ## [1.6.0] — V-λ plot and per-wafer figure folders
 - New `plot_v_lambda` function: dedicated single-panel V-λ graph
   showing voltage vs notch wavelength shift Δλ with linear fit; the
