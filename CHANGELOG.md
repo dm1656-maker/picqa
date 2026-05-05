@@ -1,5 +1,21 @@
 # Changelog
 
+## [1.6.0] — V-λ plot and per-wafer figure folders
+- New `plot_v_lambda` function: dedicated single-panel V-λ graph
+  showing voltage vs notch wavelength shift Δλ with linear fit; the
+  slope is the wavelength modulation efficiency (nm/V or pm/V)
+- Each measured bias point annotated with (V, Δλ) labels
+- Modulation efficiency highlighted in a yellow info box
+- New `_build_per_wafer_figures` in report module: for each (Wafer, Band)
+  group, automatically picks the working die closest to (0, 0) and
+  generates its own subfolder under `figures/` with 6 plots each
+  (IV, spectra, bias_shift, V-λ, V-φ, 6-panel V-π·L)
+- `picqa report` output now includes `figures/D07_C/`, `figures/D08_O/`,
+  etc. with the per-wafer reference die plots
+- Markdown report's "Per-wafer representative-die figures" section
+  documents which die was selected for each wafer
+
+
 ## [1.5.0] — Cross-parameter efficiency analysis
 - New `picqa.analysis.efficiency_map` module combines all measured
   parameters into one **EfficiencyScore** per die (0-1)
