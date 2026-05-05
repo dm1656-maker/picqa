@@ -126,7 +126,8 @@ def cmd_plot(args: argparse.Namespace) -> int:
         plot_iv_grid(measurements, out)
     elif args.kind == "spectra":
         measurements = parse_directory(args.input, test_site=list(MZM_TEST_SITES))
-        plot_spectra_grid(measurements, out, bias_v=args.bias)
+        plot_spectra_grid(measurements, out, bias_v=args.bias,
+                          mode=args.spectra_mode)
     elif args.kind == "wafermap":
         df = pd.read_csv(args.input)
         plot_wafermap(df, args.metric, out)
@@ -660,6 +661,12 @@ def build_parser() -> argparse.ArgumentParser:
     sp.add_argument("--output", "-o", required=True)
     sp.add_argument("--bias", type=float, default=-2.0,
                     help="DC bias for spectra plot (default: -2.0 V)")
+    sp.add_argument("--spectra-mode", default="median_band",
+                    choices=["median_band", "overlay", "single"],
+                    help="how to display multi-die spectra: median_band "
+                         "(default, median + 5-95%% range), overlay (all "
+                         "dies in distinct colours + median bold), or "
+                         "single (one die per session)")
     sp.add_argument("--metric", default=None,
                     help="metric column for wafermap/radial/center_vs_edge plots")
     sp.set_defaults(func=cmd_plot)
