@@ -266,12 +266,31 @@ def generate_report(
                     )
                 except Exception:
                     fig_paths["vpi_analysis"] = None
+                # V-λ wavelength-modulation-efficiency plot
+                try:
+                    from picqa.viz.uniformity_plot import plot_v_lambda
+                    fig_paths["v_lambda"] = plot_v_lambda(
+                        target, fig_dir / "v_lambda.png",
+                    )
+                except Exception:
+                    fig_paths["v_lambda"] = None
         fig_paths["vpi_dist"] = plot_vpi_distribution(
             phase_df, fig_dir / "vpi_distribution.png"
         )
     except Exception as exc:
         import logging
         logging.getLogger(__name__).warning("Phase extraction skipped: %s", exc)
+
+    # Per-wafer representative-die figures (default: closest to (0,0))
+    try:
+        per_wafer_summary = _build_per_wafer_figures(
+            measurements, features, fig_dir,
+        )
+        fig_paths["per_wafer"] = per_wafer_summary
+    except Exception as exc:
+        import logging
+        logging.getLogger(__name__).warning("Per-wafer figures skipped: %s", exc)
+        fig_paths["per_wafer"] = {}
 
     # Cross-parameter efficiency analysis (combines MZM + phase metrics)
     efficiency_df = pd.DataFrame()
@@ -571,6 +590,196 @@ def generate_report(
         lines.append(f"![Sweet spots]({fig_paths['sweet_spots'].relative_to(out_dir)})")
         lines.append("")
 
+    # Per-wafer representative-die figures
+    per_wafer = fig_paths.get("per_wafer", {})
+    if per_wafer:
+        lines.append("## Per-wafer representative-die figures")
+        lines.append("")
+        lines.append("Each wafer (and band, where applicable) gets its own subfolder "
+                     "under `figures/` containing the full plot set for the die "
+                     "closest to (0, 0) with a healthy contact. This gives a quick "
+                     "side-by-side reference die per wafer.")
+        lines.append("")
+        for folder, info in sorted(per_wafer.items()):
+            wafer = info.get("wafer", folder)
+            band = info.get("band", "")
+            die = info.get("die", "")
+            device = info.get("device", "")
+            band_label = f" ({band}-band)" if band else ""
+            lines.append(f"### {wafer}{band_label}  -  대표 die {die}")
+            if device:
+                lines.append(f"디바이스: `{device}`")
+                lines.append("")
+            for fig_key, fig_label in [
+                ("iv",            "IV (semilog)"),
+                ("spectra",       "Transmission spectra"),
+                ("bias_shift",    "Bias-shift spectra"),
+                ("v_lambda",      "V-λ (변조 효율 nm/V)"),
+                ("vphi",          "V-φ"),
+                ("vpi_analysis",  "6패널 V-π·L 분석"),
+            ]:
+                fig_path = info.get(fig_key)
+                if fig_path is None or not isinstance(fig_path, Path):
+                    continue
+                lines.append(f"**{fig_label}**")
+                lines.append(f"![{fig_label}]({fig_path.relative_to(out_dir)})")
+                lines.append("")
+
     md_path = out_dir / "report.md"
     md_path.write_text("\n".join(lines), encoding="utf-8")
     return md_path
+
+
+# --------------------------------------------------------------------- #
+# Per-wafer representative-die figures
+# --------------------------------------------------------------------- #
+def _pick_representative_die(
+    measurements: list[Measurement],
+    wafer: str,
+    band: str | None,
+    *,
+    prefer_die: tuple[int, int] = (0, 0),
+):
+    """Pick the best representative die for a given wafer/band.
+
+    Strategy: prefer ``(prefer_die)`` (default (0,0)) if it exists and is a
+    working contact; otherwise pick the working die nearest to that target.
+    """
+    import numpy as _np
+
+    candidates = [
+        m for m in measurements
+        if m.wafer == wafer and (band is None or m.band == band)
+        and m.iv is not None and m.sweeps
+    ]
+    if not candidates:
+        return None
+
+    # Prefer dies whose contact looks healthy (|I@-1V| > 1 nA)
+    healthy = [m for m in candidates if abs(m.iv.at(-1.0)) > 1e-9]
+    pool = healthy if healthy else candidates
+
+    target_col, target_row = prefer_die
+    pool.sort(key=lambda m: ((m.die_col - target_col) ** 2
+                             + (m.die_row - target_row) ** 2))
+    return pool[0]
+
+
+def _plot_single_die_iv(measurement, output_path: Path) -> Path:
+    """Single-die IV (semilog) for the per-wafer folder."""
+    import matplotlib.pyplot as plt
+    import numpy as _np
+
+    if measurement.iv is None:
+        raise ValueError("No IV data")
+    fig, ax = plt.subplots(figsize=(7.5, 4.8))
+    ax.semilogy(measurement.iv.voltage,
+                _np.abs(measurement.iv.current) + 1e-13,
+                "ko-", markersize=5, lw=0.9)
+    ax.set_xlabel("Voltage (V)")
+    ax.set_ylabel("|Current| (A)")
+    band_str = f" ({measurement.band}-band)" if measurement.band else ""
+    ax.set_title(f"IV: {measurement.wafer}/{measurement.die}{band_str}")
+    ax.grid(alpha=0.3, which="both")
+    fig.tight_layout()
+    fig.savefig(output_path, dpi=130, bbox_inches="tight")
+    plt.close(fig)
+    return output_path
+
+
+def _plot_single_die_spectra(measurement, output_path: Path) -> Path:
+    """Single-die overlay of all bias spectra (one panel)."""
+    import matplotlib.pyplot as plt
+
+    if not measurement.sweeps:
+        raise ValueError("No spectra")
+    fig, ax = plt.subplots(figsize=(8.0, 4.8))
+    sweeps = sorted(measurement.sweeps, key=lambda s: s.dc_bias_v)
+    for sw in sweeps:
+        ax.plot(sw.wavelength_nm, sw.insertion_loss_db, lw=0.7,
+                label=f"{sw.dc_bias_v:+.1f} V")
+    ax.set_xlabel("Wavelength (nm)")
+    ax.set_ylabel("IL (dB)")
+    band_str = f" ({measurement.band}-band)" if measurement.band else ""
+    ax.set_title(f"Spectra: {measurement.wafer}/{measurement.die}{band_str}")
+    ax.legend(fontsize=8, ncol=2, loc="lower left")
+    ax.grid(alpha=0.3)
+    fig.tight_layout()
+    fig.savefig(output_path, dpi=130, bbox_inches="tight")
+    plt.close(fig)
+    return output_path
+
+
+def _build_per_wafer_figures(
+    measurements: list[Measurement],
+    features: pd.DataFrame,
+    fig_dir: Path,
+    *,
+    prefer_die: tuple[int, int] = (0, 0),
+) -> dict[str, dict[str, Path]]:
+    """For each (wafer, band) make a folder under fig_dir and dump the
+    standard set of plots for that wafer's representative die.
+
+    Returns a nested mapping ``{ "D08_O": { "v_lambda": Path, ... } }``.
+    The picked die is the one closest to ``prefer_die`` (default (0,0))
+    that has a working contact.
+    """
+    from picqa.viz.spectrum_plot import plot_bias_shift
+    from picqa.viz.uniformity_plot import plot_v_lambda, plot_vphi_curve
+    from picqa.viz.vpi_analysis import plot_vpi_analysis
+
+    summary: dict[str, dict[str, Path]] = {}
+
+    if features.empty:
+        return summary
+
+    if "Band" in features.columns:
+        groups = features.groupby(["Wafer", "Band"], dropna=False).size().index
+    else:
+        groups = [(w, "") for w in features["Wafer"].unique()]
+
+    for key in groups:
+        if isinstance(key, tuple):
+            wafer, band = key
+        else:
+            wafer, band = key, ""
+        band = band if isinstance(band, str) else ""
+
+        target = _pick_representative_die(
+            measurements, wafer, band if band else None,
+            prefer_die=prefer_die,
+        )
+        if target is None:
+            continue
+
+        folder_name = f"{wafer}_{band}" if band else wafer
+        wafer_dir = fig_dir / folder_name
+        wafer_dir.mkdir(parents=True, exist_ok=True)
+
+        wafer_figs: dict[str, Path] = {
+            "wafer": wafer,
+            "band": band,
+            "die": target.die,
+            "device": target.device_name,
+        }
+
+        for fig_name, fn in [
+            ("iv",            lambda: _plot_single_die_iv(target, wafer_dir / "iv.png")),
+            ("spectra",       lambda: _plot_single_die_spectra(target, wafer_dir / "spectra.png")),
+            ("bias_shift",    lambda: plot_bias_shift(target, wafer_dir / "bias_shift.png")),
+            ("v_lambda",      lambda: plot_v_lambda(target, wafer_dir / "v_lambda.png")),
+            ("vphi",          lambda: plot_vphi_curve(target, wafer_dir / "vphi.png")),
+            ("vpi_analysis",  lambda: plot_vpi_analysis(target, wafer_dir / "vpi_analysis.png")),
+        ]:
+            try:
+                wafer_figs[fig_name] = fn()
+            except Exception as exc:
+                import logging
+                logging.getLogger(__name__).warning(
+                    "Per-wafer plot %s for %s/%s failed: %s",
+                    fig_name, wafer, band, exc,
+                )
+
+        summary[folder_name] = wafer_figs
+
+    return summary
