@@ -7,6 +7,7 @@ from picqa.viz.summary_plot import plot_summary
 from picqa.viz.uniformity_plot import (
     plot_center_vs_edge,
     plot_radial_dependence,
+    plot_v_lambda,
     plot_vphi_curve,
     plot_vpi_distribution,
 )
@@ -26,6 +27,7 @@ __all__ = [
     "plot_radial_dependence",
     "plot_center_vs_edge",
     # project 2
+    "plot_v_lambda",
     "plot_vphi_curve",
     "plot_vpi_distribution",
     "plot_vpi_analysis",

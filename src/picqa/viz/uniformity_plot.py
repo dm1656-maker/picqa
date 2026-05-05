@@ -14,6 +14,81 @@ from picqa.io.schemas import Measurement
 
 
 # --------------------------------------------------------------------- #
+# V-λ (Voltage vs notch wavelength shift) — single-panel detailed view
+# --------------------------------------------------------------------- #
+def plot_v_lambda(
+    measurement: Measurement,
+    output_path: str | Path,
+    *,
+    title: str | None = None,
+) -> Path:
+    """V-λ plot: voltage vs notch wavelength shift Δλ.
+
+    Each measured DC bias is plotted as a point; a linear fit gives the
+    tuning slope dλ/dV. The slope is the **wavelength modulation
+    efficiency** (nm/V) — steeper slopes mean less voltage is needed to
+    move the notch by a given amount.
+    """
+    df = vphi_trace(measurement)
+    if df.empty:
+        raise ValueError("Cannot build V-λ trace (no notches found)")
+
+    biases = df["Bias_V"].to_numpy(dtype=float)
+    notches = df["Notch_nm"].to_numpy(dtype=float)
+    # Reference Δλ to the bias closest to 0 V
+    ref_idx = int(np.argmin(np.abs(biases)))
+    delta_lambda_pm = (notches - notches[ref_idx]) * 1000.0  # nm → pm
+
+    # Linear fit
+    slope_pm_per_v, intercept_pm = np.polyfit(biases, delta_lambda_pm, 1)
+    slope_nm_per_v = slope_pm_per_v / 1000.0
+
+    fig, ax = plt.subplots(figsize=(8.5, 5.2))
+    ax.plot(biases, delta_lambda_pm, "o", color="tab:blue", markersize=9,
+            markeredgecolor="navy", label="Measured")
+    bs = np.linspace(biases.min() - 0.1, biases.max() + 0.1, 100)
+    ax.plot(bs, slope_pm_per_v * bs + intercept_pm, "--", color="tab:red", lw=1.6,
+            label=f"Linear fit: slope = {slope_nm_per_v*1000:.2f} pm/V")
+
+    # Annotate every measured point with its bias and Δλ
+    for V, dL in zip(biases, delta_lambda_pm):
+        ax.annotate(f"({V:+.1f}V, {dL:+.0f}pm)",
+                    xy=(V, dL),
+                    xytext=(6, 6), textcoords="offset points",
+                    fontsize=8, color="navy")
+
+    ax.axhline(0, color="gray", lw=0.5)
+    ax.axvline(0, color="gray", lw=0.5)
+    ax.set_xlabel("Voltage V (V)", fontsize=11)
+    ax.set_ylabel("Wavelength shift  Δλ  (pm)", fontsize=11)
+    band_str = f" {measurement.band}-band" if measurement.band else ""
+    if title is None:
+        title = (f"V-λ characterisation: {measurement.wafer}/{measurement.die}"
+                 f"{band_str}")
+    ax.set_title(title, fontsize=12)
+
+    # Stats box in lower-right corner
+    eff_text = (
+        f"Modulation efficiency\n"
+        f"  |dλ/dV| = {abs(slope_nm_per_v)*1000:.1f} pm/V\n"
+        f"  = {abs(slope_nm_per_v):.4f} nm/V"
+    )
+    ax.text(0.98, 0.04, eff_text, transform=ax.transAxes,
+            fontsize=9, ha="right", va="bottom", family="monospace",
+            bbox=dict(boxstyle="round,pad=0.5", facecolor="#FFFACD",
+                      edgecolor="gray", alpha=0.9))
+    ax.legend(loc="upper right", fontsize=9)
+    ax.grid(alpha=0.3)
+
+    fig.tight_layout()
+    out = Path(output_path)
+    out.parent.mkdir(parents=True, exist_ok=True)
+    fig.savefig(out, dpi=130, bbox_inches="tight")
+    plt.close(fig)
+    return out
+
+
+# --------------------------------------------------------------------- #
 # Project 2: V-phi curve
 # --------------------------------------------------------------------- #
 def plot_vphi_curve(
