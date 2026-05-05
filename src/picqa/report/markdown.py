@@ -132,7 +132,16 @@ def generate_report(
     except Exception:
         fig_paths["iv"] = None
     try:
-        fig_paths["spectra"] = plot_spectra_grid(measurements, fig_dir / "spectra.png")
+        fig_paths["spectra"] = plot_spectra_grid(
+            measurements, fig_dir / "spectra.png", mode="median_band",
+        )
+        # Also produce a clean per-session single-die view alongside
+        try:
+            fig_paths["spectra_single"] = plot_spectra_grid(
+                measurements, fig_dir / "spectra_single.png", mode="single",
+            )
+        except Exception:
+            fig_paths["spectra_single"] = None
     except Exception:
         fig_paths["spectra"] = None
     try:
