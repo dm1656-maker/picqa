@@ -1,5 +1,30 @@
 # Changelog
 
+## [1.7.0] — FWHM and Q-factor analysis
+- New `picqa.analysis.fwhm` module:
+  - `fwhm_of_peak()` measures FWHM at -3 dB on a transmission peak or notch
+  - Polynomial envelope subtraction (flatten=True) so peaks appear flat near 0 dB
+  - Linear interpolation between samples for sub-pm width accuracy
+  - `extract_fwhm_features()` builds a die-level table of (centre, FWHM, Q)
+- New `picqa.viz.fwhm_plot` module:
+  - `plot_fwhm_annotated()` reproduces the textbook FWHM illustration with
+    peak line, half-max line, vertical edges, and FWHM arrow + label
+  - `plot_q_factor_distribution()` per-wafer box plot + FWHM-vs-Q scatter
+- New CLI `picqa fwhm` with --feature, --bias, --drop-db, --no-flatten flags
+- Auto-included in `picqa report`: fwhm_features.csv,
+  fwhm_annotated.png, q_factor_distribution.png, plus a new
+  "FWHM and Q-factor analysis" section
+- Q_factor and FWHM_nm added to the EfficiencyScore default direction map
+  (Q higher = better, FWHM smaller = better) for use when these columns
+  are merged into the scoring DataFrame
+
+Findings on HY202103:
+- O-band MZMs (D23, D24, D08-O): median Q ≈ 273, FWHM ≈ 4.8 nm
+- C-band MZMs (D07, D08-C):       median Q ≈ 222, FWHM ≈ 7.0 nm
+- C-band FWHM is wider because FSR scales as λ²/n_g; Q values are
+  consistent across all good wafers (8–25 σ within group)
+
+
 ## [1.6.1] — Cleaner multi-die spectrum plot
 - `plot_spectra_grid` rewritten with three display modes:
   - `median_band` (new default): bold median spectrum + 5-95 percentile
