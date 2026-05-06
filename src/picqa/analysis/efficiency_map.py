@@ -26,6 +26,8 @@ from pathlib import Path
 import numpy as np
 import pandas as pd
 
+from picqa.viz.labels import L
+
 
 # Default normalisation directions. ``"min"`` means smaller value is better
 # (gets a higher normalised score), ``"max"`` is the opposite.
@@ -41,6 +43,8 @@ DEFAULT_DIRECTIONS: dict[str, str] = {
     "ER_at_0V_dB": "max",
     "Loss_per_um_dB_per_um": "min_abs", # less doping loss
     "Modulation_per_um_dB_per_V_per_um": "min_abs",  # higher mod efficiency = more negative slope
+    "Q_factor": "max",                  # sharper resonance is better
+    "FWHM_nm": "min",                   # narrower FWHM is better
 }
 
 
@@ -304,13 +308,16 @@ def plot_efficiency_wafermap(
     output_path: str | Path,
     *,
     group_by: list[str] | None = None,
-    title: str = "Per-die efficiency score",
+    title: str | None = None,
 ) -> Path:
     """Wafer map of the EfficiencyScore.
 
     If multiple wafers/bands are present, draws one panel each.
     """
     import matplotlib.pyplot as plt
+
+    if title is None:
+        title = L("efficiency_score_title")
 
     if group_by is None:
         # Auto-detect: split by Wafer (and Band if present and varies)
@@ -353,10 +360,10 @@ def plot_efficiency_wafermap(
         )
         ax.set_xticks(cols_all)
         ax.set_yticks(rows_all)
-        ax.set_xlabel("Die Column")
-        ax.set_ylabel("Die Row")
+        ax.set_xlabel(L("die_col"))
+        ax.set_ylabel(L("die_row"))
         label = " / ".join(str(v) for v in key)
-        ax.set_title(f"{label}  (n={len(sub)}, "
+        ax.set_title(f"{label}  ({L('n_dies', n=len(sub))}, "
                      f"mean={sub['EfficiencyScore'].mean():.2f})")
         plt.colorbar(im, ax=ax, fraction=0.04, label="EfficiencyScore (0–1)")
         # Annotate scores
@@ -385,10 +392,13 @@ def plot_sweet_spots(
     sweet_spots: pd.DataFrame,
     output_path: str | Path,
     *,
-    title: str = "Sweet-spot map: positions consistently in the top tier",
+    title: str | None = None,
 ) -> Path:
     """Plot how many wafers each die position is in the top tier on."""
     import matplotlib.pyplot as plt
+
+    if title is None:
+        title = L("sweet_spot_title")
 
     if sweet_spots.empty:
         raise ValueError("No sweet-spot data to plot")
@@ -414,9 +424,9 @@ def plot_sweet_spots(
     )
     axes[0].set_xticks(cols)
     axes[0].set_yticks(rows)
-    axes[0].set_xlabel("Die Column")
-    axes[0].set_ylabel("Die Row")
-    axes[0].set_title("# of wafers where this position is in the top tier")
+    axes[0].set_xlabel(L("die_col"))
+    axes[0].set_ylabel(L("die_row"))
+    axes[0].set_title(L("n_wafers_top"))
     plt.colorbar(im, ax=axes[0], fraction=0.04)
     for _, r in df.iterrows():
         n_top = int(r["n_wafers_top"])
@@ -434,9 +444,9 @@ def plot_sweet_spots(
     )
     axes[1].set_xticks(cols)
     axes[1].set_yticks(rows)
-    axes[1].set_xlabel("Die Column")
-    axes[1].set_ylabel("Die Row")
-    axes[1].set_title("Mean efficiency score across all wafers")
+    axes[1].set_xlabel(L("die_col"))
+    axes[1].set_ylabel(L("die_row"))
+    axes[1].set_title(L("mean_eff_across"))
     plt.colorbar(im2, ax=axes[1], fraction=0.04)
     for _, r in df.iterrows():
         ms = r["mean_score"]

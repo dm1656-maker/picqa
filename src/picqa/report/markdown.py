@@ -301,6 +301,47 @@ def generate_report(
         logging.getLogger(__name__).warning("Per-wafer figures skipped: %s", exc)
         fig_paths["per_wafer"] = {}
 
+    # FWHM / Q-factor extraction (peak mode by default)
+    fwhm_df = pd.DataFrame()
+    try:
+        from picqa.analysis.fwhm import extract_fwhm_features
+        from picqa.viz.fwhm_plot import (
+            plot_fwhm_annotated,
+            plot_q_factor_distribution,
+        )
+        fwhm_df = extract_fwhm_features(measurements, feature="peak")
+        fwhm_df.to_csv(out_dir / "fwhm_features.csv", index=False)
+        # Annotated single-die figure - use the best die from features
+        good = features[~features.get("FailedContact", False)]
+        if not good.empty:
+            row0 = good.iloc[0]
+            target = next(
+                (m for m in measurements
+                 if m.wafer == row0["Wafer"]
+                 and m.session == row0["Session"]
+                 and m.die == row0["Die"]),
+                None,
+            )
+            if target is not None:
+                try:
+                    fig_paths["fwhm_annotated"] = plot_fwhm_annotated(
+                        target, fig_dir / "fwhm_annotated.png", feature="peak",
+                    )
+                except Exception:
+                    fig_paths["fwhm_annotated"] = None
+        # Population distribution
+        if fwhm_df["Q_factor"].notna().any():
+            try:
+                fig_paths["q_distribution"] = plot_q_factor_distribution(
+                    fwhm_df.dropna(subset=["Q_factor"]),
+                    fig_dir / "q_factor_distribution.png",
+                )
+            except Exception:
+                fig_paths["q_distribution"] = None
+    except Exception as exc:
+        import logging
+        logging.getLogger(__name__).warning("FWHM extraction skipped: %s", exc)
+
     # Cross-parameter efficiency analysis (combines MZM + phase metrics)
     efficiency_df = pd.DataFrame()
     sweet_df = pd.DataFrame()
@@ -475,6 +516,34 @@ def generate_report(
             lines.append(_df_to_md(flat))
             lines.append("")
 
+    # FWHM and Q-factor
+    if not fwhm_df.empty and fwhm_df["Q_factor"].notna().any():
+        lines.append("## FWHM and Q-factor analysis")
+        lines.append("")
+        lines.append(
+            "FWHM (Full Width at Half Maximum) measures the spectral width "
+            "of a transmission peak at the -3 dB level (= 50 % linear "
+            "intensity). The Q-factor (= λ_centre / FWHM) is dimensionless "
+            "and quantifies how spectrally selective the device is — higher "
+            "is sharper. The polynomial envelope of the grating coupler is "
+            "subtracted before measurement so peaks appear flat near 0 dB."
+        )
+        lines.append("")
+        per_wafer_q = (
+            fwhm_df.dropna(subset=["Q_factor"])
+            .groupby(["Wafer", "Band"], dropna=False)[["FWHM_nm", "Q_factor"]]
+            .agg(["count", "median", "std"])
+            .round(2)
+        )
+        if not per_wafer_q.empty:
+            lines.append("### Per-wafer FWHM / Q summary")
+            lines.append("")
+            flat = per_wafer_q.copy()
+            flat.columns = [f"{a}_{b}" for a, b in flat.columns]
+            flat = flat.reset_index()
+            lines.append(_df_to_md(flat))
+            lines.append("")
+
     # Cross-parameter efficiency
     if not efficiency_df.empty:
         lines.append("## Cross-parameter efficiency analysis")
@@ -590,6 +659,14 @@ def generate_report(
         lines.append("### (Project 2) Vπ distribution and Vπ·L figure of merit")
         lines.append(f"![Vπ distribution]({fig_paths['vpi_dist'].relative_to(out_dir)})")
         lines.append("")
+    if fig_paths.get("fwhm_annotated"):
+        lines.append("### FWHM annotated illustration")
+        lines.append(f"![FWHM]({fig_paths['fwhm_annotated'].relative_to(out_dir)})")
+        lines.append("")
+    if fig_paths.get("q_distribution"):
+        lines.append("### Q-factor distribution across wafers")
+        lines.append(f"![Q distribution]({fig_paths['q_distribution'].relative_to(out_dir)})")
+        lines.append("")
     if fig_paths.get("efficiency_map"):
         lines.append("### Cross-parameter efficiency map")
         lines.append(f"![Efficiency map]({fig_paths['efficiency_map'].relative_to(out_dir)})")
@@ -678,6 +755,7 @@ def _plot_single_die_iv(measurement, output_path: Path) -> Path:
     """Single-die IV (semilog) for the per-wafer folder."""
     import matplotlib.pyplot as plt
     import numpy as _np
+    from picqa.viz.labels import L
 
     if measurement.iv is None:
         raise ValueError("No IV data")
@@ -685,8 +763,8 @@ def _plot_single_die_iv(measurement, output_path: Path) -> Path:
     ax.semilogy(measurement.iv.voltage,
                 _np.abs(measurement.iv.current) + 1e-13,
                 "ko-", markersize=5, lw=0.9)
-    ax.set_xlabel("Voltage (V)")
-    ax.set_ylabel("|Current| (A)")
+    ax.set_xlabel(L("voltage"))
+    ax.set_ylabel(L("current_abs"))
     band_str = f" ({measurement.band}-band)" if measurement.band else ""
     ax.set_title(f"IV: {measurement.wafer}/{measurement.die}{band_str}")
     ax.grid(alpha=0.3, which="both")
@@ -699,6 +777,7 @@ def _plot_single_die_iv(measurement, output_path: Path) -> Path:
 def _plot_single_die_spectra(measurement, output_path: Path) -> Path:
     """Single-die overlay of all bias spectra (one panel)."""
     import matplotlib.pyplot as plt
+    from picqa.viz.labels import L
 
     if not measurement.sweeps:
         raise ValueError("No spectra")
@@ -707,8 +786,8 @@ def _plot_single_die_spectra(measurement, output_path: Path) -> Path:
     for sw in sweeps:
         ax.plot(sw.wavelength_nm, sw.insertion_loss_db, lw=0.7,
                 label=f"{sw.dc_bias_v:+.1f} V")
-    ax.set_xlabel("Wavelength (nm)")
-    ax.set_ylabel("IL (dB)")
+    ax.set_xlabel(L("wavelength"))
+    ax.set_ylabel(L("il_db"))
     band_str = f" ({measurement.band}-band)" if measurement.band else ""
     ax.set_title(f"Spectra: {measurement.wafer}/{measurement.die}{band_str}")
     ax.legend(fontsize=8, ncol=2, loc="lower left")

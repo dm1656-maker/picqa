@@ -431,6 +431,67 @@ def cmd_list(args: argparse.Namespace) -> int:
     return 0
 
 
+def cmd_fwhm(args: argparse.Namespace) -> int:
+    """Extract FWHM and Q-factor for every die.
+
+    Writes:
+    * fwhm_features.csv         — die-level table (FWHM, Q, centre wavelength)
+    * fwhm_annotated.png        — single-die illustrative plot
+    * q_factor_distribution.png — population-level summary
+    """
+    from picqa.analysis.fwhm import extract_fwhm_features
+    from picqa.viz.fwhm_plot import plot_fwhm_annotated, plot_q_factor_distribution
+
+    out_dir = Path(args.output_dir)
+    out_dir.mkdir(parents=True, exist_ok=True)
+
+    measurements = parse_directory(args.data_dir, test_site=list(MZM_TEST_SITES))
+    df = extract_fwhm_features(measurements,
+                               bias_v=args.bias, feature=args.feature,
+                               drop_db=args.drop_db, flatten=not args.no_flatten)
+    df.to_csv(out_dir / "fwhm_features.csv", index=False)
+
+    n_valid = int(df["Q_factor"].notna().sum())
+    print(f"\nExtracted {n_valid} / {len(df)} valid FWHM measurements")
+    if n_valid:
+        print(f"\nPer-wafer Q summary ({args.feature}):")
+        per_wafer = (df.dropna(subset=["Q_factor"])
+                       .groupby("Wafer")[["FWHM_nm", "Q_factor"]]
+                       .agg(["count", "median", "std"]).round(2))
+        print(per_wafer.to_string())
+
+    # Pick a representative die for the annotated plot — use (0,0) closest
+    target = None
+    for m in measurements:
+        if m.die_col == 0 and m.die_row == 0 and m.iv is not None \
+                and abs(m.iv.at(-1.0)) > 1e-9:
+            target = m
+            break
+    if target is None and measurements:
+        # fallback to first working die
+        for m in measurements:
+            if m.iv is not None and abs(m.iv.at(-1.0)) > 1e-9:
+                target = m
+                break
+    if target is not None:
+        plot_fwhm_annotated(
+            target, out_dir / "fwhm_annotated.png",
+            bias_v=args.bias, feature=args.feature,
+            drop_db=args.drop_db, flatten=not args.no_flatten,
+        )
+        print(f"\nAnnotated plot saved → {out_dir/'fwhm_annotated.png'}")
+
+    if n_valid:
+        plot_q_factor_distribution(
+            df.dropna(subset=["Q_factor"]),
+            out_dir / "q_factor_distribution.png",
+        )
+        print(f"Distribution plot saved → {out_dir/'q_factor_distribution.png'}")
+
+    print(f"\nAll outputs saved to {out_dir}")
+    return 0
+
+
 def cmd_yield(args: argparse.Namespace) -> int:
     df = pd.read_csv(args.features)
     spec = load_spec(args.spec, args.family)
@@ -702,6 +763,22 @@ def build_parser() -> argparse.ArgumentParser:
     sp.add_argument("data_dir")
     sp.add_argument("--output", "-o", default=None)
     sp.set_defaults(func=cmd_phase)
+
+    # FWHM and Q-factor
+    sp = sub.add_parser("fwhm",
+                        help="FWHM and Q-factor extraction from spectra")
+    sp.add_argument("data_dir")
+    sp.add_argument("--output-dir", "-o", required=True)
+    sp.add_argument("--bias", type=float, default=-2.0,
+                    help="DC bias at which to measure FWHM (default -2.0 V)")
+    sp.add_argument("--feature", default="peak", choices=["peak", "notch"],
+                    help="measure the FWHM of a transmission peak (default) "
+                         "or a notch (dip)")
+    sp.add_argument("--drop-db", type=float, default=3.0,
+                    help="dB level for the FWHM measurement (default 3.0 = -3 dB)")
+    sp.add_argument("--no-flatten", action="store_true",
+                    help="skip the grating-coupler envelope subtraction")
+    sp.set_defaults(func=cmd_fwhm)
 
     # efficiency (cross-parameter scoring + sweet-spot map)
     sp = sub.add_parser("efficiency",
