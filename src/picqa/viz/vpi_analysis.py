@@ -31,6 +31,7 @@ from scipy.optimize import curve_fit
 
 from picqa.analysis.phase_extraction import parse_phaseshifter_length_um
 from picqa.io.schemas import Measurement, WavelengthSweep
+from picqa.viz.labels import L
 
 
 # --------------------------------------------------------------------- #
@@ -243,10 +244,10 @@ def plot_vpi_analysis(
     for c, sw in zip(colours, sweeps):
         ax.plot(sw.wavelength_nm, sw.insertion_loss_db, color=c, lw=0.8)
     ax.plot(sw0.wavelength_nm, ref_at_0V, "k--", lw=1.2,
-            label=f"Fit ref polynomial O{poly_order}")
-    ax.set_xlabel("Wavelength [nm]")
-    ax.set_ylabel("Measured transmission [dB]")
-    ax.set_title("Transmission spectra - as measured")
+            label=L("fit_polynomial", order=poly_order))
+    ax.set_xlabel(L("wavelength"))
+    ax.set_ylabel(L("il_db"))
+    ax.set_title(L("transmission_measured"))
     ax.legend(loc="lower left", fontsize=9)
     ax.grid(alpha=0.3)
 
@@ -278,9 +279,9 @@ def plot_vpi_analysis(
     design = measurement.design_wavelength_nm or 1310.0
     half = fsr_estimates[0] if fsr_estimates else 5.0
     ax.set_xlim(design - half, design + half)
-    ax.set_xlabel("Wavelength [nm]")
-    ax.set_ylabel("Normalized transmission [dB]")
-    ax.set_title("Analysis spectra (normalised)")
+    ax.set_xlabel(L("wavelength"))
+    ax.set_ylabel(L("il_db"))
+    ax.set_title(L("analysis_normalised"))
     ax.legend(loc="upper right", fontsize=8, ncol=1)
     ax.grid(alpha=0.3)
 
@@ -301,9 +302,9 @@ def plot_vpi_analysis(
             ax.plot(lam_focus, il_focus, "o", color="tab:blue",
                     markersize=8, markeredgecolor="k", zorder=10)
         ax.set_xlim(common_left_lambda - 0.6, common_left_lambda + 1.0)
-    ax.set_xlabel("Wavelength [nm]")
-    ax.set_ylabel("Normalized transmission [dB]")
-    ax.set_title("Focus on spectral fit left peak")
+    ax.set_xlabel(L("wavelength"))
+    ax.set_ylabel(L("il_db"))
+    ax.set_title(L("focus_left_peak"))
     ax.legend(loc="upper right", fontsize=8)
     ax.grid(alpha=0.3)
 
@@ -312,9 +313,9 @@ def plot_vpi_analysis(
     ax.semilogy(measurement.iv.voltage,
                 np.abs(measurement.iv.current) + 1e-13, "ko-",
                 markersize=5, lw=0.8)
-    ax.set_xlabel("Voltage [V]")
-    ax.set_ylabel("Current [A]")
-    ax.set_title("IV-analysis")
+    ax.set_xlabel(L("voltage"))
+    ax.set_ylabel(L("current"))
+    ax.set_title(L("iv_analysis"))
     ax.grid(alpha=0.3, which="both")
 
     # --- (5) phase vs bias from each notch ---
@@ -328,7 +329,7 @@ def plot_vpi_analysis(
             # Reference is the bias closest to 0
             ref_b_idx = int(np.argmin(np.abs(biases)))
             phi_pi = {}  # idx → array
-            labels = {0: "Peak fitO2 left", 1: "Peak fitO2 center", 2: "Peak fitO2 right"}
+            peak_labels = {0: L("peak_left"), 1: L("peak_center"), 2: L("peak_right")}
             colors_idx = {0: "tab:blue", 1: "tab:red", 2: "k"}
             for j in range(n_use):
                 lams = np.array([tracked[b][j][0] for b in biases])
@@ -339,11 +340,11 @@ def plot_vpi_analysis(
                         color=colors_idx.get(j, "gray"),
                         ls="-." if j == 2 else "--",
                         lw=1.2,
-                        label=labels.get(j, f"Peak {j}"))
+                        label=peak_labels.get(j, f"Peak {j}"))
     ax.axhline(0, color="gray", lw=0.5)
-    ax.set_xlabel("Voltage [V]")
-    ax.set_ylabel("Phase shift")
-    ax.set_title("Phase-analysis")
+    ax.set_xlabel(L("voltage"))
+    ax.set_ylabel(L("phase_shift"))
+    ax.set_title(L("phase_analysis"))
     ax.legend(loc="upper right", fontsize=8)
     ax.grid(alpha=0.3)
 
@@ -376,10 +377,10 @@ def plot_vpi_analysis(
                     ax.scatter(biases[idx], vpi_l[idx], color=col, s=80,
                                zorder=10,
                                label=f"{lab} = {vpi_l[idx]:.2f} V·cm")
-    ax.set_xlabel("Voltage [V]")
-    ax.set_ylabel("VpiL [V·cm]")
-    ax.set_title("VpiL-analysis")
-    ax.legend(loc="upper right", fontsize=8, title="VpiL [V·cm]")
+    ax.set_xlabel(L("voltage"))
+    ax.set_ylabel(L("vpi_l_vcm"))
+    ax.set_title(L("vpil_analysis"))
+    ax.legend(loc="upper right", fontsize=8, title="Vπ·L (V·cm)")
     ax.grid(alpha=0.3)
 
     band_str = f"{measurement.band}-band " if measurement.band else ""

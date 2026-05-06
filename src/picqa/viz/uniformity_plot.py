@@ -11,6 +11,7 @@ import pandas as pd
 from picqa.analysis.phase_extraction import vphi_trace
 from picqa.analysis.wafer_uniformity import add_radius_column
 from picqa.io.schemas import Measurement
+from picqa.viz.labels import L
 
 
 # --------------------------------------------------------------------- #
@@ -45,10 +46,10 @@ def plot_v_lambda(
 
     fig, ax = plt.subplots(figsize=(8.5, 5.2))
     ax.plot(biases, delta_lambda_pm, "o", color="tab:blue", markersize=9,
-            markeredgecolor="navy", label="Measured")
+            markeredgecolor="navy", label=L("measured"))
     bs = np.linspace(biases.min() - 0.1, biases.max() + 0.1, 100)
     ax.plot(bs, slope_pm_per_v * bs + intercept_pm, "--", color="tab:red", lw=1.6,
-            label=f"Linear fit: slope = {slope_nm_per_v*1000:.2f} pm/V")
+            label=f"{L('linear_fit')}: slope = {slope_nm_per_v*1000:.2f} pm/V")
 
     # Annotate every measured point with its bias and Δλ
     for V, dL in zip(biases, delta_lambda_pm):
@@ -59,22 +60,22 @@ def plot_v_lambda(
 
     ax.axhline(0, color="gray", lw=0.5)
     ax.axvline(0, color="gray", lw=0.5)
-    ax.set_xlabel("Voltage V (V)", fontsize=11)
-    ax.set_ylabel("Wavelength shift  Δλ  (pm)", fontsize=11)
+    ax.set_xlabel(L("voltage"), fontsize=11)
+    ax.set_ylabel(L("wavelength_shift_pm"), fontsize=11)
     band_str = f" {measurement.band}-band" if measurement.band else ""
     if title is None:
-        title = (f"V-λ characterisation: {measurement.wafer}/{measurement.die}"
-                 f"{band_str}")
+        title = L("vlambda_title",
+                  wafer=measurement.wafer, die=measurement.die, band=band_str)
     ax.set_title(title, fontsize=12)
 
     # Stats box in lower-right corner
     eff_text = (
-        f"Modulation efficiency\n"
+        f"{L('modulation_eff')}\n"
         f"  |dλ/dV| = {abs(slope_nm_per_v)*1000:.1f} pm/V\n"
         f"  = {abs(slope_nm_per_v):.4f} nm/V"
     )
     ax.text(0.98, 0.04, eff_text, transform=ax.transAxes,
-            fontsize=9, ha="right", va="bottom", family="monospace",
+            fontsize=9, ha="right", va="bottom",
             bbox=dict(boxstyle="round,pad=0.5", facecolor="#FFFACD",
                       edgecolor="gray", alpha=0.9))
     ax.legend(loc="upper right", fontsize=9)
@@ -110,9 +111,9 @@ def plot_vphi_curve(
     bs = np.linspace(df["Bias_V"].min(), df["Bias_V"].max(), 50)
     axes[0].plot(bs, slope * bs + intercept, "--",
                  alpha=0.6, label=f"slope = {slope*1000:.1f} pm/V")
-    axes[0].set_xlabel("DC Bias (V)")
-    axes[0].set_ylabel("Tracked notch wavelength (nm)")
-    axes[0].set_title("Notch shift vs bias")
+    axes[0].set_xlabel(L("voltage"))
+    axes[0].set_ylabel(L("tracked_notch_nm"))
+    axes[0].set_title(L("notch_shift_vs_bias"))
     axes[0].legend()
     axes[0].grid(alpha=0.3)
 
@@ -126,16 +127,18 @@ def plot_vphi_curve(
     axes[1].axhline(-1, color="green", lw=0.7, ls=":")
     if abs(s) > 1e-9:
         vpi = abs(1.0 / s)
-        axes[1].set_title(f"V-φ relation  (Vπ = {vpi:.2f} V)")
+        axes[1].set_title(L("vphi_relation", vpi=vpi))
     else:
-        axes[1].set_title("V-φ relation")
-    axes[1].set_xlabel("DC Bias (V)")
-    axes[1].set_ylabel("Δφ / π")
+        axes[1].set_title(L("vphi_relation", vpi=float("nan")))
+    axes[1].set_xlabel(L("voltage"))
+    axes[1].set_ylabel(L("phase_shift_over_pi"))
     axes[1].legend()
     axes[1].grid(alpha=0.3)
 
     if title is None:
-        title = f"V-phi characterisation: {measurement.wafer}/{measurement.die}"
+        band_str = f" {measurement.band}-band" if measurement.band else ""
+        title = L("vphi_title",
+                  wafer=measurement.wafer, die=measurement.die, band=band_str)
     fig.suptitle(title, fontsize=12, y=1.01)
     fig.tight_layout()
 
@@ -150,7 +153,7 @@ def plot_vpi_distribution(
     features_with_phase: pd.DataFrame,
     output_path: str | Path,
     *,
-    title: str = "Vπ distribution across wafers",
+    title: str | None = None,
 ) -> Path:
     """Box plot of Vπ per wafer (working dies only) plus a Vπ·L scatter."""
     df = features_with_phase.copy()
@@ -161,6 +164,9 @@ def plot_vpi_distribution(
     if df.empty:
         raise ValueError("No working dies with valid Vπ found")
 
+    if title is None:
+        title = L("vpi_distribution_title")
+
     wafers = sorted(df["Wafer"].dropna().unique())
     fig, axes = plt.subplots(1, 2, figsize=(12, 4.4))
 
@@ -170,10 +176,10 @@ def plot_vpi_distribution(
         sub = df[df["Wafer"] == w]
         if len(sub):
             data.append(sub["Vpi_V"].values)
-            labels.append(f"{w}\n(n={len(sub)})")
+            labels.append(f"{w}\n({L('n_dies', n=len(sub))})")
     axes[0].boxplot(data, tick_labels=labels, showmeans=True)
     axes[0].set_ylabel("Vπ (V)")
-    axes[0].set_title("Vπ per wafer (working dies)")
+    axes[0].set_title(L("vpi_per_wafer"))
     axes[0].grid(alpha=0.3)
 
     # (b) Vπ vs Vπ·L scatter
@@ -183,12 +189,11 @@ def plot_vpi_distribution(
             axes[1].scatter(sub["Vpi_V"], sub["Vpi_L_V_cm"],
                             alpha=0.7, s=40, label=w)
         axes[1].set_xlabel("Vπ (V)")
-        axes[1].set_ylabel("Vπ·L (V·cm)")
-        axes[1].set_title("Vπ·L figure of merit")
+        axes[1].set_ylabel(L("vpi_l_vcm"))
+        axes[1].set_title(L("vpi_l_fom"))
         axes[1].legend()
         axes[1].grid(alpha=0.3)
     else:
-        # Replace with ER scatter
         if "ER_at_-2V_dB" in df.columns:
             for w in wafers:
                 sub = df[df["Wafer"] == w]

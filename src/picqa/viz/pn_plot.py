@@ -8,6 +8,8 @@ import matplotlib.pyplot as plt
 import numpy as np
 import pandas as pd
 
+from picqa.viz.labels import L
+
 
 def plot_pn_length_dependence(
     segment_features: pd.DataFrame,
@@ -50,15 +52,15 @@ def plot_pn_length_dependence(
                      color=color_map[wafer], lw=2.5, marker="s", ms=7,
                      label=f"{wafer} mean")
 
-    axes[0].set_xlabel("Segment length (µm)")
-    axes[0].set_ylabel("IL drop vs reference (dB)")
-    axes[0].set_title("Doping loss vs length")
+    axes[0].set_xlabel(L("length_um"))
+    axes[0].set_ylabel(L("il_drop_vs_ref"))
+    axes[0].set_title(L("pn_il_drop_title"))
     axes[0].grid(alpha=0.3)
     axes[0].legend(fontsize=8, loc="lower left")
 
-    axes[1].set_xlabel("Segment length (µm)")
-    axes[1].set_ylabel("dIL / dV @ 1310 nm  (dB/V)")
-    axes[1].set_title("Electroabsorption modulation vs length")
+    axes[1].set_xlabel(L("length_um"))
+    axes[1].set_ylabel(L("dil_dv"))
+    axes[1].set_title(L("pn_modulation_title"))
     axes[1].grid(alpha=0.3)
     axes[1].legend(fontsize=8, loc="upper left")
 

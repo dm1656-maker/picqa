@@ -8,6 +8,7 @@ import matplotlib.pyplot as plt
 import numpy as np
 
 from picqa.io.schemas import Measurement
+from picqa.viz.labels import L
 
 
 def plot_spectra_grid(
@@ -104,9 +105,9 @@ def plot_spectra_grid(
             p05 = np.nanpercentile(spectra_matrix, 5, axis=0)
             p95 = np.nanpercentile(spectra_matrix, 95, axis=0)
             ax.fill_between(ref_wl, p05, p95, color="tab:blue",
-                            alpha=0.20, label="5–95% range")
-            ax.plot(ref_wl, median, color="navy", lw=1.4, label="median")
-            ax.set_title(f"{w} / {s}  (n={len(sweeps)} dies)", fontsize=9)
+                            alpha=0.20, label=L("range_5_95"))
+            ax.plot(ref_wl, median, color="navy", lw=1.4, label=L("median"))
+            ax.set_title(f"{w} / {s}  ({L('n_dies', n=len(sweeps))})", fontsize=9)
             ax.legend(loc="lower left", fontsize=7, framealpha=0.85)
 
         elif mode == "overlay":
@@ -116,14 +117,14 @@ def plot_spectra_grid(
                         color=cmap(j % 20), alpha=0.55, lw=0.7)
             # Median on top in bold
             median = np.nanmedian(spectra_matrix, axis=0)
-            ax.plot(ref_wl, median, color="black", lw=1.6, label="median")
-            ax.set_title(f"{w} / {s}  (n={len(sweeps)} dies)", fontsize=9)
+            ax.plot(ref_wl, median, color="black", lw=1.6, label=L("median"))
+            ax.set_title(f"{w} / {s}  ({L('n_dies', n=len(sweeps))})", fontsize=9)
             ax.legend(loc="lower left", fontsize=7, framealpha=0.85)
         else:
             raise ValueError(f"Unknown mode={mode!r}")
 
-        ax.set_xlabel("Wavelength (nm)")
-        ax.set_ylabel("IL (dB)")
+        ax.set_xlabel(L("wavelength"))
+        ax.set_ylabel(L("il_db"))
         # Auto-derive x-limit per panel from this session's design wavelength
         if xlim is None:
             design_wl = die_measurements[0].design_wavelength_nm or 1310.0
@@ -134,8 +135,7 @@ def plot_spectra_grid(
         ax.grid(True, alpha=0.3)
 
     if title is None:
-        title = (f"Transmission spectra @ DC bias = {bias_v:+.1f} V  "
-                 f"(mode = {mode})")
+        title = L("spectra_at_bias", bias=bias_v) + f"  (mode = {mode})"
     fig.suptitle(title, fontsize=12, y=1.0)
     fig.tight_layout()
 
@@ -188,11 +188,12 @@ def plot_bias_shift(
                      label=f"{sw.dc_bias_v:+.1f} V")
     axes[0].set_xlim(*full_window_nm)
     axes[0].set_ylim(-50, 0)
-    axes[0].set_xlabel("Wavelength (nm)")
-    axes[0].set_ylabel("IL (dB)")
+    axes[0].set_xlabel(L("wavelength"))
+    axes[0].set_ylabel(L("il_db"))
     band_str = f" ({measurement.band}-band)" if measurement.band else ""
     axes[0].set_title(
-        f"Bias-dependent spectra: {measurement.wafer}/{measurement.die}{band_str}"
+        L("bias_dependent",
+          wafer=measurement.wafer, die=measurement.die, band=band_str)
     )
     axes[0].legend(loc="lower left", ncol=2, fontsize=8)
     axes[0].grid(alpha=0.3)
@@ -202,9 +203,9 @@ def plot_bias_shift(
         m = (sw.wavelength_nm >= lo) & (sw.wavelength_nm <= hi)
         axes[1].plot(sw.wavelength_nm[m], sw.insertion_loss_db[m], lw=0.8,
                      label=f"{sw.dc_bias_v:+.1f} V")
-    axes[1].set_xlabel("Wavelength (nm)")
-    axes[1].set_ylabel("IL (dB)")
-    axes[1].set_title(f"Zoom near design wavelength ({design_wl:.0f} nm)")
+    axes[1].set_xlabel(L("wavelength"))
+    axes[1].set_ylabel(L("il_db"))
+    axes[1].set_title(L("zoom_at_design", design=design_wl))
     axes[1].legend(loc="lower left", ncol=2, fontsize=8)
     axes[1].grid(alpha=0.3)
 

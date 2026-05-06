@@ -8,6 +8,7 @@ import matplotlib.pyplot as plt
 import numpy as np
 
 from picqa.io.schemas import Measurement
+from picqa.viz.labels import L
 
 
 def plot_iv_grid(
@@ -15,13 +16,16 @@ def plot_iv_grid(
     output_path: str | Path,
     *,
     test_site: str = "DCM_LMZO",
-    title: str = "IV characteristics",
+    title: str | None = None,
     ncols: int = 3,
 ) -> Path:
     """One subplot per (wafer, session); IV curves for all dies overlaid."""
     sel = [m for m in measurements if m.test_site == test_site and m.iv is not None]
     if not sel:
         raise ValueError(f"No IV data for test_site={test_site}")
+
+    if title is None:
+        title = L("iv_title")
 
     groups = sorted({(m.wafer, m.session) for m in sel})
     nrows = (len(groups) + ncols - 1) // ncols
@@ -37,9 +41,9 @@ def plot_iv_grid(
                 alpha=0.6,
                 lw=0.8,
             )
-        ax.set_title(f"{w} / {s}\n({len(grp)} dies)", fontsize=9)
-        ax.set_xlabel("Voltage (V)")
-        ax.set_ylabel("|Current| (A)")
+        ax.set_title(f"{w} / {s}\n({L('n_dies', n=len(grp))})", fontsize=9)
+        ax.set_xlabel(L("voltage"))
+        ax.set_ylabel(L("current_abs"))
         ax.set_ylim(1e-13, 1e-3)
         ax.grid(True, which="both", alpha=0.3)
 
