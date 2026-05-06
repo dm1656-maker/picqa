@@ -1,5 +1,18 @@
 # Changelog
 
+## [1.7.1] — FWHM wafer map
+- New `plot_fwhm_wafermap` in viz/wafer_map.py shows FWHM and Q-factor
+  per (Wafer, Band) on side-by-side wafer maps
+- Per-band colour scale by default — each (Wafer, Band) panel uses its
+  own range so subtle within-wafer variation is visible
+- FWHM uses reversed colormap (viridis_r) so smaller (better) FWHM is
+  brighter; Q uses standard viridis so larger (better) Q is brighter
+- Each cell annotated with its measured value
+- New CLI: `picqa plot fwhm_wafermap <fwhm.csv|data-dir> -o map.png`
+- Auto-included in `picqa report` and `picqa fwhm` outputs as
+  `figures/fwhm_wafermap.png`
+
+
 ## [1.7.0] — FWHM and Q-factor analysis
 - New `picqa.analysis.fwhm` module:
   - `fwhm_of_peak()` measures FWHM at -3 dB on a transmission peak or notch

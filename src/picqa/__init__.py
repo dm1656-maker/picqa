@@ -1,6 +1,6 @@
 """picqa — Photonic IC Quality Analyzer."""
 
-__version__ = "1.7.0"
+__version__ = "1.7.1"
 
 from picqa.io.schemas import IVMeasurement, Measurement, WavelengthSweep
 from picqa.io.xml_parser import parse_directory, parse_measurement
