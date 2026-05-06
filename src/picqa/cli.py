@@ -201,6 +201,19 @@ def cmd_plot(args: argparse.Namespace) -> int:
             print("No working die with clear notches found", file=sys.stderr)
             return 2
         plot_vpi_analysis(target, out)
+    elif args.kind == "fwhm_wafermap":
+        # FWHM (and Q-factor) wafer maps per (Wafer, Band)
+        # Input is either a CSV from `picqa fwhm` or a data directory
+        from picqa.viz.wafer_map import plot_fwhm_wafermap
+        in_path = Path(args.input)
+        if in_path.is_file() and in_path.suffix.lower() == ".csv":
+            df = pd.read_csv(args.input)
+        else:
+            from picqa.analysis.fwhm import extract_fwhm_features
+            measurements = parse_directory(args.input, test_site=list(MZM_TEST_SITES))
+            df = extract_fwhm_features(measurements,
+                                       bias_v=args.bias, feature="peak")
+        plot_fwhm_wafermap(df, out)
     else:
         print(f"Unknown plot kind: {args.kind}", file=sys.stderr)
         return 2
@@ -488,6 +501,14 @@ def cmd_fwhm(args: argparse.Namespace) -> int:
         )
         print(f"Distribution plot saved → {out_dir/'q_factor_distribution.png'}")
 
+        from picqa.viz.wafer_map import plot_fwhm_wafermap
+        plot_fwhm_wafermap(
+            df.dropna(subset=["Q_factor"]),
+            out_dir / "fwhm_wafermap.png",
+            show_q=True, per_band_scale=True,
+        )
+        print(f"Wafer map saved → {out_dir/'fwhm_wafermap.png'}")
+
     print(f"\nAll outputs saved to {out_dir}")
     return 0
 
@@ -717,7 +738,7 @@ def build_parser() -> argparse.ArgumentParser:
                     choices=["iv", "spectra", "wafermap", "summary",
                              "pn_length", "pn_summary",
                              "radial", "center_vs_edge", "vpi", "vphi",
-                             "vpi_analysis"])
+                             "vpi_analysis", "fwhm_wafermap"])
     sp.add_argument("input", help="data directory or features CSV depending on kind")
     sp.add_argument("--output", "-o", required=True)
     sp.add_argument("--bias", type=float, default=-2.0,

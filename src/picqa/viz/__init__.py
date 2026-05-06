@@ -12,7 +12,7 @@ from picqa.viz.uniformity_plot import (
     plot_vpi_distribution,
 )
 from picqa.viz.vpi_analysis import plot_vpi_analysis
-from picqa.viz.wafer_map import plot_wafermap, plot_wafermap_grid
+from picqa.viz.wafer_map import plot_fwhm_wafermap, plot_wafermap, plot_wafermap_grid
 
 __all__ = [
     "plot_iv_grid",
@@ -20,6 +20,7 @@ __all__ = [
     "plot_bias_shift",
     "plot_wafermap",
     "plot_wafermap_grid",
+    "plot_fwhm_wafermap",
     "plot_summary",
     "plot_pn_length_dependence",
     "plot_pn_summary",
