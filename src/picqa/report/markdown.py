@@ -338,6 +338,16 @@ def generate_report(
                 )
             except Exception:
                 fig_paths["q_distribution"] = None
+            # FWHM and Q-factor wafer maps
+            try:
+                from picqa.viz.wafer_map import plot_fwhm_wafermap
+                fig_paths["fwhm_wafermap"] = plot_fwhm_wafermap(
+                    fwhm_df.dropna(subset=["Q_factor"]),
+                    fig_dir / "fwhm_wafermap.png",
+                    show_q=True, per_band_scale=True,
+                )
+            except Exception:
+                fig_paths["fwhm_wafermap"] = None
     except Exception as exc:
         import logging
         logging.getLogger(__name__).warning("FWHM extraction skipped: %s", exc)
@@ -666,6 +676,10 @@ def generate_report(
     if fig_paths.get("q_distribution"):
         lines.append("### Q-factor distribution across wafers")
         lines.append(f"![Q distribution]({fig_paths['q_distribution'].relative_to(out_dir)})")
+        lines.append("")
+    if fig_paths.get("fwhm_wafermap"):
+        lines.append("### FWHM and Q-factor wafer maps")
+        lines.append(f"![FWHM wafermap]({fig_paths['fwhm_wafermap'].relative_to(out_dir)})")
         lines.append("")
     if fig_paths.get("efficiency_map"):
         lines.append("### Cross-parameter efficiency map")
