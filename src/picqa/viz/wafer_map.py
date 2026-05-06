@@ -8,6 +8,8 @@ import matplotlib.pyplot as plt
 import numpy as np
 import pandas as pd
 
+from picqa.viz.labels import L
+
 
 def _draw_wafer_map(
     ax: plt.Axes,
@@ -39,8 +41,8 @@ def _draw_wafer_map(
     )
     ax.set_xticks(cols)
     ax.set_yticks(rows)
-    ax.set_xlabel("Die Column")
-    ax.set_ylabel("Die Row")
+    ax.set_xlabel(L("die_col"))
+    ax.set_ylabel(L("die_row"))
     ax.set_title(title, fontsize=9)
     plt.colorbar(im, ax=ax, fraction=0.04)
     if annotate:
@@ -110,6 +112,161 @@ def plot_wafermap_grid(
             label = " / ".join(str(v) for v in key)
             _draw_wafer_map(axes[i, j], sub, metric, f"{label}: {metric}")
 
+    fig.tight_layout()
+    out = Path(output_path)
+    out.parent.mkdir(parents=True, exist_ok=True)
+    fig.savefig(out, dpi=130, bbox_inches="tight")
+    plt.close(fig)
+    return out
+
+
+def plot_fwhm_wafermap(
+    fwhm_df: pd.DataFrame,
+    output_path: str | Path,
+    *,
+    title: str | None = None,
+    show_q: bool = True,
+    per_band_scale: bool = True,
+) -> Path:
+    """Wafer map of FWHM (and optionally Q-factor) per (Wafer, Band).
+
+    Each row of the grid is one (Wafer, Band) combination. The first
+    column shows FWHM (smaller = sharper, plotted with reversed
+    colormap so darker = better). If ``show_q`` is True, the second
+    column shows Q-factor (larger = sharper).
+
+    ``per_band_scale=True`` colour-scales each panel within its own
+    (Wafer, Band) range; setting it to False applies one global scale
+    so cross-wafer comparison is direct.
+    """
+    df = fwhm_df.dropna(subset=["FWHM_nm", "DieCol", "DieRow"]).copy()
+    if df.empty:
+        raise ValueError("No FWHM data with valid die positions")
+
+    if "Band" not in df.columns:
+        df["Band"] = ""
+    groups = sorted({(w, b if isinstance(b, str) else "")
+                     for w, b in zip(df["Wafer"], df["Band"])})
+    nrows = len(groups)
+    ncols = 2 if show_q else 1
+
+    fig, axes = plt.subplots(nrows, ncols, figsize=(6.0 * ncols, 4.0 * nrows))
+    if nrows == 1 and ncols == 1:
+        axes = np.array([[axes]])
+    elif nrows == 1:
+        axes = axes[None, :]
+    elif ncols == 1:
+        axes = axes[:, None]
+
+    # Pre-compute global vmin/vmax if not per-band
+    fwhm_vmin = fwhm_vmax = q_vmin = q_vmax = None
+    if not per_band_scale:
+        fwhm_vmin = float(df["FWHM_nm"].quantile(0.05))
+        fwhm_vmax = float(df["FWHM_nm"].quantile(0.95))
+        if show_q and "Q_factor" in df.columns:
+            q_vmin = float(df["Q_factor"].quantile(0.05))
+            q_vmax = float(df["Q_factor"].quantile(0.95))
+
+    for i, (wafer, band) in enumerate(groups):
+        sub = df[(df["Wafer"] == wafer) & (df["Band"] == band)]
+        band_label = f"{band}-band" if band else ""
+        label = f"{wafer} ({band_label})" if band else wafer
+
+        # --- FWHM panel ---
+        if per_band_scale and not sub.empty:
+            local_vmin = float(sub["FWHM_nm"].min())
+            local_vmax = float(sub["FWHM_nm"].max())
+        else:
+            local_vmin, local_vmax = fwhm_vmin, fwhm_vmax
+
+        cols = sorted(sub["DieCol"].unique())
+        rows = sorted(sub["DieRow"].unique())
+        grid = np.full((len(rows), len(cols)), np.nan)
+        for _, r in sub.iterrows():
+            gc = cols.index(r["DieCol"])
+            gr = rows.index(r["DieRow"])
+            grid[gr, gc] = r["FWHM_nm"]
+
+        ax = axes[i, 0]
+        # Use viridis_r so smaller (better) FWHM is darker green/blue
+        im = ax.imshow(
+            grid, origin="lower", cmap="viridis_r",
+            vmin=local_vmin, vmax=local_vmax,
+            extent=[min(cols) - 0.5, max(cols) + 0.5,
+                    min(rows) - 0.5, max(rows) + 0.5],
+            aspect="equal",
+        )
+        ax.set_xticks(cols)
+        ax.set_yticks(rows)
+        ax.set_xlabel(L("die_col"))
+        ax.set_ylabel(L("die_row"))
+        median_fwhm = sub["FWHM_nm"].median()
+        ax.set_title(f"FWHM (nm)  -  {label}  (median = {median_fwhm:.3f} nm)",
+                     fontsize=10)
+        plt.colorbar(im, ax=ax, fraction=0.04, label="FWHM (nm)")
+        # Annotate cells
+        for _, r in sub.iterrows():
+            v = r["FWHM_nm"]
+            if not np.isnan(v):
+                # In viridis_r the bright (yellow) end is the SMALL value
+                norm_v = ((v - local_vmin) / (local_vmax - local_vmin)
+                          if local_vmax > local_vmin else 0.5)
+                # Bright yellow background (norm < 0.3) → black text;
+                # mid range → black for readability; very dark (norm > 0.8) → white
+                if norm_v > 0.7:
+                    color = "white"
+                else:
+                    color = "black"
+                ax.text(r["DieCol"], r["DieRow"], f"{v:.2f}",
+                        ha="center", va="center", fontsize=7,
+                        color=color, fontweight="bold")
+
+        # --- Q-factor panel ---
+        if show_q and "Q_factor" in sub.columns:
+            ax = axes[i, 1]
+            if per_band_scale and not sub.empty:
+                lq_min = float(sub["Q_factor"].min())
+                lq_max = float(sub["Q_factor"].max())
+            else:
+                lq_min, lq_max = q_vmin, q_vmax
+
+            qgrid = np.full((len(rows), len(cols)), np.nan)
+            for _, r in sub.iterrows():
+                gc = cols.index(r["DieCol"])
+                gr = rows.index(r["DieRow"])
+                qgrid[gr, gc] = r["Q_factor"]
+            # Use viridis (regular) so larger (better) Q is brighter
+            im = ax.imshow(
+                qgrid, origin="lower", cmap="viridis",
+                vmin=lq_min, vmax=lq_max,
+                extent=[min(cols) - 0.5, max(cols) + 0.5,
+                        min(rows) - 0.5, max(rows) + 0.5],
+                aspect="equal",
+            )
+            ax.set_xticks(cols)
+            ax.set_yticks(rows)
+            ax.set_xlabel(L("die_col"))
+            ax.set_ylabel(L("die_row"))
+            median_q = sub["Q_factor"].median()
+            ax.set_title(f"Q-factor  -  {label}  (median = {median_q:.0f})",
+                         fontsize=10)
+            plt.colorbar(im, ax=ax, fraction=0.04, label="Q-factor")
+            for _, r in sub.iterrows():
+                v = r["Q_factor"]
+                if not np.isnan(v):
+                    norm_v = ((v - lq_min) / (lq_max - lq_min)
+                              if lq_max > lq_min else 0.5)
+                    # viridis: dark=low, yellow=high. Black text on
+                    # bright cells, white on dark.
+                    color = "black" if norm_v > 0.7 else "white"
+                    ax.text(r["DieCol"], r["DieRow"], f"{v:.0f}",
+                            ha="center", va="center", fontsize=7,
+                            color=color, fontweight="bold")
+
+    if title is None:
+        title = "FWHM and Q-factor wafer maps" if show_q \
+                else "FWHM wafer maps"
+    fig.suptitle(title, fontsize=12, y=1.0)
     fig.tight_layout()
     out = Path(output_path)
     out.parent.mkdir(parents=True, exist_ok=True)
