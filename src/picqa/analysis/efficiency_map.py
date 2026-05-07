@@ -49,12 +49,16 @@ DEFAULT_DIRECTIONS: dict[str, str] = {
 
 
 # Default metric weights. These can be overridden by the caller. Sum need not
-# equal 1; results are normalised at the end.
+# equal 1; results are normalised at the end. Note: Q_factor and FWHM_nm are
+# strongly correlated (Q = λ/FWHM, so they encode the same information),
+# therefore only Q_factor is given weight by default. Including both would
+# effectively double-count spectral selectivity.
 DEFAULT_WEIGHTS: dict[str, float] = {
     "Vpi_V": 2.0,                       # most important: actual modulation strength
     "ER_at_-2V_dB": 1.5,                # extinction ratio is core spec
     "PeakIL_dB": 1.0,                   # insertion loss
     "I_at_-1V_pA": 1.0,                 # leakage / contact quality
+    "Q_factor": 0.75,                   # spectral selectivity (FWHM-derived)
     "FSR_nm": 0.5,                      # geometric uniformity
 }
 
@@ -257,47 +261,168 @@ def position_summary(scored: pd.DataFrame) -> pd.DataFrame:
 def find_sweet_spots(
     scored: pd.DataFrame,
     *,
+    score_column: str = "EfficiencyScore",
     threshold_pct: float = 75.0,
     min_consistency: int = 2,
+    higher_is_better: bool = True,
 ) -> pd.DataFrame:
     """Find die positions that are consistently good across all wafers.
 
-    A "sweet spot" is a (DieCol, DieRow) where the efficiency score is in
-    the top ``threshold_pct`` percentile on at least ``min_consistency``
-    wafers. This identifies positions where the process consistently
-    produces good devices, not just lucky individual wafers.
-    """
-    if "EfficiencyScore" not in scored.columns:
-        raise KeyError("Run compute_efficiency_score first")
+    A "sweet spot" is a (DieCol, DieRow) where ``score_column`` lands in the
+    top ``threshold_pct`` percentile on at least ``min_consistency`` wafers.
+    This identifies positions where the process consistently produces good
+    devices, not just lucky individual wafers.
 
-    df = scored.dropna(subset=["EfficiencyScore"]).copy()
+    Parameters
+    ----------
+    score_column : str
+        Which column to rank by. Defaults to ``"EfficiencyScore"`` (the
+        composite metric); can be set to ``"Q_factor"``, ``"FWHM_nm"``,
+        ``"Vpi_V"`` etc. for axis-specific analysis.
+    higher_is_better : bool
+        ``True`` (default) treats larger values as better (top tier). Set
+        to ``False`` for metrics like FWHM, Vπ, leakage where smaller is
+        better — the function will then look for the BOTTOM ``threshold_pct``
+        percentile instead.
+    """
+    if score_column not in scored.columns:
+        raise KeyError(f"Column '{score_column}' not in scored DataFrame; "
+                       f"run compute_efficiency_score first or pass a "
+                       f"valid metric column")
+
+    df = scored.dropna(subset=[score_column]).copy()
     if df.empty:
         return pd.DataFrame()
 
     # Per-wafer percentile rank
-    df["WaferRankPct"] = (
-        df.groupby("Wafer")["EfficiencyScore"]
+    df["_RankPct"] = (
+        df.groupby("Wafer")[score_column]
           .transform(lambda s: s.rank(pct=True) * 100)
     )
-    df["IsTop"] = df["WaferRankPct"] >= threshold_pct
+    if higher_is_better:
+        df["IsTop"] = df["_RankPct"] >= threshold_pct
+    else:
+        # Bottom is best — look for the lowest percentile
+        df["IsTop"] = df["_RankPct"] <= (100.0 - threshold_pct)
 
     # Group by die position; count how many wafers have it in the top
     pos_stats = (
         df.groupby(["DieCol", "DieRow"])
           .agg(n_wafers_top=("IsTop", "sum"),
                n_wafers_total=("Wafer", "nunique"),
-               mean_score=("EfficiencyScore", "mean"),
-               median_score=("EfficiencyScore", "median"))
+               mean_score=(score_column, "mean"),
+               median_score=(score_column, "median"))
           .reset_index()
     )
     pos_stats["consistency_pct"] = (
         100.0 * pos_stats["n_wafers_top"] / pos_stats["n_wafers_total"]
     )
     pos_stats["is_sweet_spot"] = pos_stats["n_wafers_top"] >= min_consistency
+    pos_stats["score_column"] = score_column
     return pos_stats.sort_values(
         ["is_sweet_spot", "n_wafers_top", "mean_score"],
-        ascending=[False, False, False],
+        ascending=[False, False, not higher_is_better],
     )
+
+
+def find_sweet_spots_multi_metric(
+    scored: pd.DataFrame,
+    *,
+    metrics: list[tuple[str, bool]] | None = None,
+    threshold_pct: float = 75.0,
+    min_consistency: int = 2,
+) -> dict[str, pd.DataFrame]:
+    """Run :func:`find_sweet_spots` for several metrics in one call.
+
+    Parameters
+    ----------
+    metrics : list of (column, higher_is_better) tuples
+        Each tuple specifies one analysis. Defaults cover the most useful
+        per-axis views: efficiency (high=better), Q-factor (high=better),
+        FWHM (low=better), Vπ (low=better).
+
+    Returns
+    -------
+    dict
+        ``{column_name: sweet_spots_df}``. Caller can iterate to render
+        per-metric maps or to find positions that are sweet spots in
+        multiple axes simultaneously.
+    """
+    if metrics is None:
+        metrics = [
+            ("EfficiencyScore", True),
+            ("Q_factor", True),
+            ("FWHM_nm", False),
+            ("Vpi_V", False),
+        ]
+    out: dict[str, pd.DataFrame] = {}
+    for col, higher in metrics:
+        if col not in scored.columns:
+            continue
+        try:
+            out[col] = find_sweet_spots(
+                scored,
+                score_column=col,
+                threshold_pct=threshold_pct,
+                min_consistency=min_consistency,
+                higher_is_better=higher,
+            )
+        except (KeyError, ValueError):
+            continue
+    return out
+
+
+def find_combined_sweet_spots(
+    multi_sweet: dict[str, pd.DataFrame],
+    *,
+    min_axes_agreeing: int = 2,
+) -> pd.DataFrame:
+    """Find die positions that are sweet spots on **multiple axes**.
+
+    Combines per-metric sweet-spot tables to flag positions that are
+    consistently good in at least ``min_axes_agreeing`` different
+    quality measures (e.g. both Q-factor AND Vπ are top-tier on at
+    least 2 wafers each).
+
+    Returns a single DataFrame with columns:
+        DieCol, DieRow, n_axes, axes_str, total_n_wafers_top
+    sorted so the most multi-axis-strong positions come first.
+    """
+    if not multi_sweet:
+        return pd.DataFrame()
+
+    rows: dict[tuple[int, int], dict] = {}
+    for col, df in multi_sweet.items():
+        if df.empty or "is_sweet_spot" not in df.columns:
+            continue
+        sweet = df[df["is_sweet_spot"]]
+        for _, r in sweet.iterrows():
+            key = (int(r["DieCol"]), int(r["DieRow"]))
+            entry = rows.setdefault(key, {
+                "DieCol": key[0], "DieRow": key[1],
+                "axes": [], "total_n_wafers_top": 0,
+            })
+            entry["axes"].append(col)
+            entry["total_n_wafers_top"] += int(r["n_wafers_top"])
+
+    out_rows = []
+    for (col_pos, row_pos), entry in rows.items():
+        if len(entry["axes"]) >= min_axes_agreeing:
+            out_rows.append({
+                "DieCol": entry["DieCol"],
+                "DieRow": entry["DieRow"],
+                "n_axes": len(entry["axes"]),
+                "axes_str": "+".join(sorted(entry["axes"])),
+                "total_n_wafers_top": entry["total_n_wafers_top"],
+            })
+
+    if not out_rows:
+        return pd.DataFrame(columns=["DieCol", "DieRow", "n_axes",
+                                      "axes_str", "total_n_wafers_top"])
+    return (pd.DataFrame(out_rows)
+            .sort_values(["n_axes", "total_n_wafers_top"],
+                         ascending=[False, False])
+            .reset_index(drop=True))
 
 
 # ----------------------------------------------------------------------- #
@@ -459,6 +584,179 @@ def plot_sweet_spots(
     fig.tight_layout()
     out = Path(output_path)
     out.parent.mkdir(parents=True, exist_ok=True)
+    fig.savefig(out, dpi=130, bbox_inches="tight")
+    plt.close(fig)
+    return out
+
+
+def plot_multi_metric_sweet_spots(
+    multi_sweet: dict[str, pd.DataFrame],
+    output_path: str | Path,
+    *,
+    title: str | None = None,
+) -> Path:
+    """Per-metric sweet-spot maps in one figure (one panel per metric).
+
+    Each panel shows the n_wafers_top heat for that metric and marks
+    sweet spots with stars. Useful for comparing axis-specific
+    behaviour (e.g. "the Q-factor sweet spots are not the same as
+    the Vπ sweet spots").
+    """
+    import matplotlib.pyplot as plt
+
+    items = [(col, df) for col, df in multi_sweet.items()
+             if not df.empty]
+    if not items:
+        raise ValueError("No sweet-spot data to plot")
+
+    n = len(items)
+    ncols = min(2, n)
+    nrows = (n + ncols - 1) // ncols
+    fig, axes = plt.subplots(nrows, ncols,
+                             figsize=(6.0 * ncols, 4.5 * nrows),
+                             squeeze=False)
+
+    for k, (col, df) in enumerate(items):
+        ax = axes[k // ncols][k % ncols]
+        cols = sorted(df["DieCol"].unique())
+        rows = sorted(df["DieRow"].unique())
+        grid = np.full((len(rows), len(cols)), np.nan)
+        for _, r in df.iterrows():
+            gc = cols.index(r["DieCol"])
+            gr = rows.index(r["DieRow"])
+            grid[gr, gc] = r["n_wafers_top"]
+        im = ax.imshow(grid, origin="lower", cmap="YlOrRd",
+                       vmin=0,
+                       extent=[min(cols) - 0.5, max(cols) + 0.5,
+                               min(rows) - 0.5, max(rows) + 0.5],
+                       aspect="equal")
+        ax.set_xticks(cols)
+        ax.set_yticks(rows)
+        ax.set_xlabel(L("die_col"))
+        ax.set_ylabel(L("die_row"))
+        n_sweet = int(df["is_sweet_spot"].sum())
+        ax.set_title(f"{col}  ({n_sweet} sweet spots)", fontsize=10)
+        plt.colorbar(im, ax=ax, fraction=0.04, label="# wafers in top tier")
+
+        # Annotate
+        for _, r in df.iterrows():
+            n_top = int(r["n_wafers_top"])
+            marker = "★" if r["is_sweet_spot"] else ""
+            label = f"{n_top}\n{marker}" if marker else str(n_top)
+            ax.text(r["DieCol"], r["DieRow"], label,
+                    ha="center", va="center", fontsize=7,
+                    fontweight="bold" if r["is_sweet_spot"] else "normal")
+
+    # Hide unused subplots
+    for j in range(n, nrows * ncols):
+        axes[j // ncols][j % ncols].axis("off")
+
+    if title is None:
+        title = "Per-metric sweet spots — same wafers, different quality axes"
+    fig.suptitle(title, fontsize=12, y=1.0)
+    fig.tight_layout()
+    out = Path(output_path)
+    out.parent.mkdir(parents=True, exist_ok=True)
+    fig.savefig(out, dpi=130, bbox_inches="tight")
+    plt.close(fig)
+    return out
+
+
+def plot_combined_sweet_spots(
+    combined: pd.DataFrame,
+    output_path: str | Path,
+    *,
+    all_die_positions: pd.DataFrame | None = None,
+    title: str | None = None,
+) -> Path:
+    """Single-panel map of multi-axis sweet spots.
+
+    Shows die positions where multiple metrics agree on top-tier
+    quality. Cell colour encodes the number of axes that flagged the
+    position; cell text lists which axes (e.g. ``Q+Vπ``).
+
+    ``all_die_positions`` is an optional DataFrame with columns
+    ``DieCol`` and ``DieRow``; passing it lets the plot include
+    blank cells for non-sweet positions, giving a complete wafer
+    layout instead of just the sweet-spot subset.
+    """
+    import matplotlib.pyplot as plt
+
+    if combined.empty:
+        # Even with no sweet spots we still want a (mostly empty) figure
+        # so the report doesn't break
+        fig, ax = plt.subplots(figsize=(6, 5))
+        ax.text(0.5, 0.5,
+                "(no positions are sweet spots on ≥2 metrics)",
+                ha="center", va="center", transform=ax.transAxes,
+                fontsize=11, color="gray")
+        ax.set_xticks([]); ax.set_yticks([])
+        if title:
+            ax.set_title(title)
+        out = Path(output_path)
+        out.parent.mkdir(parents=True, exist_ok=True)
+        fig.savefig(out, dpi=130, bbox_inches="tight")
+        plt.close(fig)
+        return out
+
+    # Build the grid
+    if all_die_positions is not None and not all_die_positions.empty:
+        cols = sorted(all_die_positions["DieCol"].unique())
+        rows = sorted(all_die_positions["DieRow"].unique())
+        present_positions = {(int(r.DieCol), int(r.DieRow))
+                             for r in all_die_positions.itertuples()}
+    else:
+        cols = sorted(combined["DieCol"].unique())
+        rows = sorted(combined["DieRow"].unique())
+        present_positions = {(c, r) for c in cols for r in rows}
+
+    grid = np.full((len(rows), len(cols)), np.nan)
+    labels: dict[tuple[int, int], str] = {}
+    for _, r in combined.iterrows():
+        gc = cols.index(r["DieCol"])
+        gr = rows.index(r["DieRow"])
+        grid[gr, gc] = r["n_axes"]
+        # Shorten the axis label for readability
+        axes_short = (r["axes_str"]
+                      .replace("EfficiencyScore", "Eff")
+                      .replace("Q_factor", "Q")
+                      .replace("FWHM_nm", "FWHM")
+                      .replace("Vpi_V", "Vπ"))
+        labels[(int(r["DieCol"]), int(r["DieRow"]))] = axes_short
+
+    fig, ax = plt.subplots(figsize=(7.5, 6.0))
+    vmax = max(2, int(np.nanmax(grid)) if np.isfinite(np.nanmax(grid)) else 2)
+    im = ax.imshow(grid, origin="lower", cmap="YlOrRd",
+                   vmin=2, vmax=vmax,
+                   extent=[min(cols) - 0.5, max(cols) + 0.5,
+                           min(rows) - 0.5, max(rows) + 0.5],
+                   aspect="equal")
+    ax.set_xticks(cols)
+    ax.set_yticks(rows)
+    ax.set_xlabel(L("die_col"))
+    ax.set_ylabel(L("die_row"))
+    plt.colorbar(im, ax=ax, fraction=0.045, ticks=range(2, vmax + 1),
+                 label="# of metrics where this position is sweet")
+
+    # Annotate cells
+    for (c, r), text in labels.items():
+        ax.text(c, r, "★\n" + text,
+                ha="center", va="center", fontsize=8,
+                fontweight="bold")
+
+    # Lightly mark all measured positions that aren't sweet
+    for c, r in present_positions:
+        if (c, r) not in labels:
+            ax.plot(c, r, ".", color="lightgray", markersize=3, zorder=1)
+
+    if title is None:
+        title = ("Combined sweet spots — positions strong on multiple "
+                 "quality axes")
+    ax.set_title(title, fontsize=11)
+
+    out = Path(output_path)
+    out.parent.mkdir(parents=True, exist_ok=True)
+    fig.tight_layout()
     fig.savefig(out, dpi=130, bbox_inches="tight")
     plt.close(fig)
     return out

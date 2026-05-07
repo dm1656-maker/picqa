@@ -356,24 +356,38 @@ def generate_report(
     efficiency_df = pd.DataFrame()
     sweet_df = pd.DataFrame()
     pos_df = pd.DataFrame()
+    multi_sweet_df = pd.DataFrame()
     try:
         from picqa.analysis.efficiency_map import (
             compute_efficiency_score,
+            find_combined_sweet_spots,
             find_sweet_spots,
+            find_sweet_spots_multi_metric,
+            plot_combined_sweet_spots,
             plot_efficiency_wafermap,
+            plot_multi_metric_sweet_spots,
             plot_sweet_spots,
             position_summary,
         )
         # Merge phase columns into features for richer scoring
         scoring_input = features.copy()
+        keys = ["Wafer", "Session", "Die"]
         if not phase_df.empty:
-            keys = ["Wafer", "Session", "Die"]
             extra_cols = [c for c in ["Vpi_V", "Vpi_L_V_cm",
                                       "ER_at_-2V_dB", "ER_at_0V_dB"]
                           if c in phase_df.columns]
             if extra_cols:
                 scoring_input = scoring_input.merge(
                     phase_df[keys + extra_cols], on=keys, how="left",
+                )
+        # Also merge FWHM/Q if available — adds spectral selectivity to the
+        # score so position analysis reflects ALL modulator quality axes.
+        if not fwhm_df.empty:
+            fwhm_cols = [c for c in ["FWHM_nm", "Q_factor", "Centre_nm"]
+                         if c in fwhm_df.columns]
+            if fwhm_cols:
+                scoring_input = scoring_input.merge(
+                    fwhm_df[keys + fwhm_cols], on=keys, how="left",
                 )
         # Skip failed-contact dies for fair scoring
         if "FailedContact" in scoring_input.columns:
@@ -392,6 +406,32 @@ def generate_report(
             fig_paths["sweet_spots"] = plot_sweet_spots(
                 sweet_df, fig_dir / "sweet_spots.png",
             )
+
+            # Per-metric sweet spots (Q, FWHM, Vπ separately)
+            try:
+                multi = find_sweet_spots_multi_metric(efficiency_df)
+                if multi:
+                    fig_paths["multi_sweet"] = plot_multi_metric_sweet_spots(
+                        multi, fig_dir / "multi_metric_sweet_spots.png",
+                    )
+                    multi_sweet_df = find_combined_sweet_spots(
+                        multi, min_axes_agreeing=2,
+                    )
+                    if not multi_sweet_df.empty:
+                        multi_sweet_df.to_csv(
+                            out_dir / "combined_sweet_spots.csv", index=False,
+                        )
+                    fig_paths["combined_sweet"] = plot_combined_sweet_spots(
+                        multi_sweet_df,
+                        fig_dir / "combined_sweet_spots.png",
+                        all_die_positions=efficiency_df[["DieCol", "DieRow"]],
+                    )
+            except Exception:
+                import logging
+                logging.getLogger(__name__).warning(
+                    "Multi-metric sweet spot analysis skipped",
+                    exc_info=True,
+                )
     except Exception as exc:
         import logging
         logging.getLogger(__name__).warning("Efficiency analysis skipped: %s", exc)
@@ -605,6 +645,32 @@ def generate_report(
                 )
                 lines.append("")
 
+        # Multi-axis sweet spots
+        if not multi_sweet_df.empty:
+            lines.append("### Combined sweet spots — strong on multiple metrics")
+            lines.append("")
+            lines.append(
+                "Sweet-spot analysis was repeated separately for "
+                "EfficiencyScore, Q-factor, FWHM, and Vπ. The table below "
+                "lists positions that landed in the top tier on **two or "
+                "more axes** — these are the strongest multi-criteria "
+                "candidates because no single metric is dominating the "
+                "decision."
+            )
+            lines.append("")
+            lines.append(_df_to_md(multi_sweet_df))
+            lines.append("")
+            lines.append(
+                "**Interpretation:** positions tagged `Eff+Vπ` are good "
+                "for variability AND modulation strength. Positions tagged "
+                "`FWHM+Q` are good in spectral selectivity but may be "
+                "average on overall efficiency (since Q and FWHM measure "
+                "the same physical property). Positions matching "
+                "`Eff+Q` are the most robust binning candidates because "
+                "they combine independent quality axes."
+            )
+            lines.append("")
+
     # PN modulator section
     if not pn_seg_df.empty:
         lines.append("## PN modulator (PCM_PSLOTE_P1N1) analysis")
@@ -688,6 +754,14 @@ def generate_report(
     if fig_paths.get("sweet_spots"):
         lines.append("### Sweet-spot map")
         lines.append(f"![Sweet spots]({fig_paths['sweet_spots'].relative_to(out_dir)})")
+        lines.append("")
+    if fig_paths.get("multi_sweet"):
+        lines.append("### Per-metric sweet-spot maps")
+        lines.append(f"![Multi-metric sweet spots]({fig_paths['multi_sweet'].relative_to(out_dir)})")
+        lines.append("")
+    if fig_paths.get("combined_sweet"):
+        lines.append("### Combined multi-axis sweet spots")
+        lines.append(f"![Combined sweet spots]({fig_paths['combined_sweet'].relative_to(out_dir)})")
         lines.append("")
 
     # Per-wafer representative-die figures

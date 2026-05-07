@@ -563,10 +563,10 @@ def cmd_efficiency(args: argparse.Namespace) -> int:
         features = features[~features["FailedContact"]].copy()
 
     # Try to merge phase features for richer scoring
+    keys = ["Wafer", "Session", "Die"]
     if args.phase:
         try:
             phase = pd.read_csv(args.phase)
-            keys = ["Wafer", "Session", "Die"]
             extra_cols = [c for c in ["Vpi_V", "Vpi_L_V_cm",
                                       "ER_at_-2V_dB", "ER_at_0V_dB"]
                           if c in phase.columns]
@@ -577,6 +577,20 @@ def cmd_efficiency(args: argparse.Namespace) -> int:
         except FileNotFoundError:
             print(f"Warning: phase file not found at {args.phase}, "
                   f"continuing without Vπ/ER", file=sys.stderr)
+
+    # Try to merge FWHM/Q features for spectral-selectivity scoring
+    if args.fwhm:
+        try:
+            fwhm = pd.read_csv(args.fwhm)
+            extra_cols = [c for c in ["FWHM_nm", "Q_factor", "Centre_nm"]
+                          if c in fwhm.columns]
+            if extra_cols:
+                fwhm_subset = fwhm[keys + extra_cols]
+                features = features.merge(fwhm_subset, on=keys, how="left")
+                print(f"Merged FWHM columns: {extra_cols}")
+        except FileNotFoundError:
+            print(f"Warning: FWHM file not found at {args.fwhm}, "
+                  f"continuing without FWHM/Q", file=sys.stderr)
 
     # Build config (allow per-wafer normalisation via flag)
     config = EfficiencyConfig()
@@ -595,6 +609,38 @@ def cmd_efficiency(args: argparse.Namespace) -> int:
 
     plot_efficiency_wafermap(scored, out_dir / "efficiency_wafermap.png")
     plot_sweet_spots(sweet, out_dir / "sweet_spots.png")
+
+    # Multi-metric (per-axis) sweet spots if FWHM/Q or Vπ are present
+    multi_sweet_combined = pd.DataFrame()
+    try:
+        from picqa.analysis.efficiency_map import (
+            find_combined_sweet_spots,
+            find_sweet_spots_multi_metric,
+            plot_combined_sweet_spots,
+            plot_multi_metric_sweet_spots,
+        )
+        multi = find_sweet_spots_multi_metric(
+            scored, threshold_pct=args.threshold,
+            min_consistency=args.min_consistency,
+        )
+        if multi:
+            plot_multi_metric_sweet_spots(
+                multi, out_dir / "multi_metric_sweet_spots.png",
+            )
+            multi_sweet_combined = find_combined_sweet_spots(
+                multi, min_axes_agreeing=2,
+            )
+            if not multi_sweet_combined.empty:
+                multi_sweet_combined.to_csv(
+                    out_dir / "combined_sweet_spots.csv", index=False,
+                )
+            plot_combined_sweet_spots(
+                multi_sweet_combined,
+                out_dir / "combined_sweet_spots.png",
+                all_die_positions=scored[["DieCol", "DieRow"]],
+            )
+    except Exception as exc:
+        print(f"Warning: multi-metric analysis skipped: {exc}", file=sys.stderr)
 
     # Print headline info
     print(f"\n=== Efficiency analysis ===")
@@ -617,6 +663,10 @@ def cmd_efficiency(args: argparse.Namespace) -> int:
                           "consistency_pct"]].to_string(index=False))
     else:
         print("(none — try lowering --threshold or --min-consistency)")
+
+    if not multi_sweet_combined.empty:
+        print(f"\nCombined sweet spots (strong on ≥ 2 quality axes):")
+        print(multi_sweet_combined.to_string(index=False))
 
     print(f"\nAll outputs saved to {out_dir}")
     return 0
@@ -808,6 +858,8 @@ def build_parser() -> argparse.ArgumentParser:
                     help="MZM features CSV from `picqa extract mzm`")
     sp.add_argument("--phase", default=None,
                     help="optional phase features CSV (adds Vπ, ER to the score)")
+    sp.add_argument("--fwhm", default=None,
+                    help="optional FWHM features CSV (adds Q-factor to the score)")
     sp.add_argument("--output-dir", "-o", required=True)
     sp.add_argument("--top-n", type=int, default=10,
                     help="how many top dies to list (default 10)")
