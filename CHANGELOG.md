@@ -1,5 +1,37 @@
 # Changelog
 
+## [1.8.0] — Multi-axis sweet spot analysis (FWHM/Q + Vπ + Efficiency)
+- `find_sweet_spots()` generalised to accept any score column with a
+  ``higher_is_better`` flag; backward-compatible with default
+  EfficiencyScore behaviour
+- New `find_sweet_spots_multi_metric()` runs sweet-spot analysis
+  separately for EfficiencyScore, Q-factor, FWHM, and Vπ
+- New `find_combined_sweet_spots()` flags positions that are sweet on
+  two or more independent quality axes — the most actionable output
+  for binning decisions
+- New `plot_multi_metric_sweet_spots()` (per-metric grid) and
+  `plot_combined_sweet_spots()` (single map showing which axes
+  agree on each position)
+- DEFAULT_WEIGHTS in EfficiencyScore now includes Q_factor (0.75) so
+  spectral selectivity contributes when fwhm CSV is merged
+- `picqa report` now auto-merges fwhm_features.csv into the scoring
+  input and writes combined_sweet_spots.csv,
+  multi_metric_sweet_spots.png, combined_sweet_spots.png
+- `picqa efficiency` CLI gains --fwhm flag and prints combined
+  sweet spots in the summary
+
+Findings on HY202103:
+- Single-axis sweet spots:
+  - EfficiencyScore: (0,3), (0,-3), (2,0)
+  - Q-factor:        (-3,-3), (2,-3), (-1,-1), (2,2), (-4,0), (-3,2)
+  - Vπ:              (3,-1), (0,-3)
+- Multi-axis sweet spots (≥ 2 quality axes agree):
+  - (0,-3): Eff + Vπ — best for variability AND modulation strength
+  - (2,-3): Eff + Q  — robust binning candidate (independent axes)
+  - 5 positions strong on FWHM+Q (selectivity-only group; not the
+    same dies that score high on overall efficiency)
+
+
 ## [1.7.1] — FWHM wafer map
 - New `plot_fwhm_wafermap` in viz/wafer_map.py shows FWHM and Q-factor
   per (Wafer, Band) on side-by-side wafer maps
