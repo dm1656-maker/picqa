@@ -181,6 +181,9 @@ def parse_measurement(path: str | os.PathLike) -> Measurement | None:
         logger.warning("Invalid die coordinate in %s", p)
         return None
 
+    creation_date = root.attrib.get("CreationDate", "")
+    session = _derive_session(p, creation_date)
+
     return Measurement(
         wafer=info.get("Wafer", ""),
         die_col=die_col,
@@ -195,10 +198,46 @@ def parse_measurement(path: str | os.PathLike) -> Measurement | None:
         iv=iv,
         sweeps=sweeps,
         align_wavelength_nm=align_wl,
-        creation_date=root.attrib.get("CreationDate", ""),
-        session=p.parent.name,
+        creation_date=creation_date,
+        session=session,
         source_path=str(p),
     )
+
+
+# Standard session folder name pattern: YYYYMMDD_HHMMSS (HY202103 convention)
+_SESSION_DIR_RE = re.compile(r"^\d{8}_\d{6}$")
+
+
+def _derive_session(xml_path: Path, creation_date: str) -> str:
+    """Derive a session ID for a measurement.
+
+    Strategy (in priority order):
+
+    1. If the XML file lives in a folder named like ``YYYYMMDD_HHMMSS``
+       (the HY202103 convention), use that folder name. This preserves
+       backward compatibility with the standard directory layout.
+
+    2. Otherwise, parse the XML's ``CreationDate`` attribute (format
+       ``"Mon Jul 15 19:17:03 2019"``) and bucket it into 1-minute
+       windows so that dies measured close together in time are grouped
+       into the same session. Returns a string like ``"20190715_1917"``.
+
+    3. If neither is available, fall back to the parent folder name
+       (which is what the parser did originally).
+    """
+    parent_name = xml_path.parent.name
+    if _SESSION_DIR_RE.match(parent_name):
+        return parent_name
+
+    if creation_date:
+        try:
+            from datetime import datetime
+            dt = datetime.strptime(creation_date, "%a %b %d %H:%M:%S %Y")
+            return dt.strftime("%Y%m%d_%H%M")
+        except ValueError:
+            pass
+
+    return parent_name
 
 
 def parse_directory(

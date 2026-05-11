@@ -1,6 +1,6 @@
 # picqa — Photonic IC Quality Analyzer
 
-[![CI](https://github.com/USER/picqa/actions/workflows/ci.yml/badge.svg)](https://github.com/USER/picqa/actions)
+[![CI](https://github.com/dw7566/picqa/actions/workflows/ci.yml/badge.svg)](https://github.com/dw7566/picqa/actions)
 
 A modular Python library and CLI for analyzing wafer-level test data from
 silicon photonic process runs. Designed around the HY202103 dataset format
@@ -47,6 +47,78 @@ cd picqa
 pip install -e ".[dev]"
 ```
 
+## Dataset setup
+
+**The picqa package does not bundle measurement data.** Distribute data
+separately to keep the package small (the HY202103 dataset alone is
+~480 MB raw, ~220 MB zipped).
+
+Expected directory layout:
+
+```
+HY202103_data/                       ← root, name freely changeable
+├── D07/                             ← one folder per wafer
+│   └── 20190715_190855/             ← one folder per measurement session
+│       ├── DCM_LMZC/                ← one folder per test site
+│       │   └── *.xml                ← OIO-format measurement XML files
+│       ├── PCM_PSLCTE_P1N1/
+│       └── ...
+├── D08/
+├── D23/
+└── D24/
+```
+
+### Folder layout — flexible
+
+picqa is **layout-agnostic** as of v1.8.2. It recursively finds every
+``.xml`` file under your data directory and reads wafer / die / band
+information from inside each file, so the folder structure on disk can
+be anything that makes sense to you. All three layouts below work
+identically:
+
+```
+# Standard HY202103 layout (recommended)
+data/
+├── D07/20190715_190855/<files>.xml
+├── D08/20190526_082853/<files>.xml
+└── ...
+
+# Arbitrary nesting
+data/
+├── 내폴더/뭐든/*.xml
+└── ...
+
+# Completely flat
+data/
+└── *.xml         ← all 700+ XMLs in one folder
+```
+
+In layouts without a ``YYYYMMDD_HHMMSS`` session folder, picqa
+auto-derives a session ID from each XML's ``CreationDate`` (1-minute
+buckets), so dies measured close in time are still grouped correctly.
+
+### If you have HY202103.zip
+
+```bash
+# Windows PowerShell
+Expand-Archive HY202103.zip -DestinationPath .
+Rename-Item HY202103 data
+
+# Linux/macOS
+unzip HY202103.zip
+mv HY202103 data
+```
+
+Then pass `--data HY202103_data` to `run.py` or the CLI. The default in
+all entry points assumes `HY202103_data` lives at the project root, so
+if you keep that name everything works without extra flags.
+
+### If you don't have the dataset
+
+Request it from your course coordinator / data source. picqa is a
+library — analysis you can apply to any compatible dataset, not the
+data itself.
+
 ## Quickstart
 
 The fastest way to get every result for a fresh dataset is the bundled
@@ -54,7 +126,7 @@ one-shot script:
 
 ```bash
 # Run the entire pipeline (≈ 70 s on the HY202103 dataset)
-python run.py --data ./HY202103 --out ./results
+python run.py --data ./data --out ./results
 # → ./results/report.md          ← integrated Markdown report
 # → ./results/figures/           ← 51 plots (per-wafer subfolders included)
 # → ./results/efficiency_scored.csv, combined_sweet_spots.csv, …

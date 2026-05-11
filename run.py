@@ -29,9 +29,9 @@ def parse_args() -> argparse.Namespace:
         description="Run every picqa analysis end-to-end.",
         formatter_class=argparse.ArgumentDefaultsHelpFormatter,
     )
-    p.add_argument("--data", type=Path, default=Path("HY202103_data"),
+    p.add_argument("--data", type=Path, default=Path("data"),
                    help="Root directory containing wafer subfolders "
-                        "(e.g. HY202103_data/D07/...)")
+                        "(e.g. data/D07/...)")
     p.add_argument("--out", type=Path, default=Path("results"),
                    help="Output directory; will be created if missing")
     p.add_argument("--spec", type=Path,
@@ -108,8 +108,28 @@ def main() -> int:
 
     # Sanity-check inputs
     if not args.data.is_dir():
-        print(f"ERROR: --data path {args.data} does not exist or is not a "
-              f"directory.", file=sys.stderr)
+        print(f"\nERROR: data directory '{args.data}' does not exist.",
+              file=sys.stderr)
+        print("", file=sys.stderr)
+        print("picqa needs a directory of measurement XML files to analyse.",
+              file=sys.stderr)
+        print("Expected layout:", file=sys.stderr)
+        print("    <data-dir>/<WaferID>/<SessionID>/<TestSite>/*.xml",
+              file=sys.stderr)
+        print("e.g. data/D08/20190526_082853/DCM_LMZO/<files>.xml",
+              file=sys.stderr)
+        print("", file=sys.stderr)
+        print("If you have the HY202103 dataset:", file=sys.stderr)
+        print("    1. Unzip HY202103.zip into the project root", file=sys.stderr)
+        print("    2. Rename the extracted folder to 'data' "
+              "(or pass --data <your-folder>)", file=sys.stderr)
+        print("    3. Re-run this script", file=sys.stderr)
+        print("", file=sys.stderr)
+        print("If you don't have the dataset yet, request it from your "
+              "data source. picqa is a library — measurement data is",
+              file=sys.stderr)
+        print("distributed separately to keep the package small.",
+              file=sys.stderr)
         return 1
     if not args.spec.is_file():
         print(f"WARNING: --spec file {args.spec} not found; yield analysis "

@@ -1,5 +1,21 @@
 # Changelog
 
+## [1.8.2] — Layout-agnostic data discovery
+- `parse_directory()` now works on **any folder structure** containing
+  XML files, not just the standard HY202103 layout
+- New `_derive_session()` helper picks the best session ID:
+  1. If the file lives in a `YYYYMMDD_HHMMSS` folder, that folder name
+     is used (100% backward compatible with HY202103 conventions)
+  2. Otherwise the XML's `CreationDate` is parsed and bucketed into
+     1-minute windows (e.g. "20190715_1917"), so dies measured close
+     in time group into the same session even from a flat folder
+  3. Falls back to parent folder name if both above fail
+- 7 new unit tests covering the new logic + a friendlier error in
+  `run.py` when the data folder is missing
+- README has a new "Folder layout — flexible" section explaining the
+  three supported layouts (standard, arbitrary, flat)
+
+
 ## [1.8.1] — run.py and analysis notebook
 - New `run.py` at the project root: one command to produce every
   analysis output for a dataset
