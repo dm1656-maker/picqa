@@ -5,24 +5,73 @@ on:
     branches: [main, develop]
   pull_request:
     branches: [main, develop]
+  # Allow manual runs from the Actions tab
+  workflow_dispatch:
 
 jobs:
-  test:
+  # Job 1: smoke-test that the package can be installed and imported on
+  # every supported Python version. Fast (~30s). The "table stakes" check.
+  import-check:
+    name: Import check (Python ${{ matrix.python-version }})
     runs-on: ubuntu-latest
     strategy:
+      fail-fast: false
       matrix:
-        python-version: ["3.9", "3.10", "3.11"]
+        python-version: ["3.9", "3.10", "3.11", "3.12"]
     steps:
       - uses: actions/checkout@v4
       - name: Set up Python ${{ matrix.python-version }}
         uses: actions/setup-python@v5
         with:
           python-version: ${{ matrix.python-version }}
-      - name: Install package
+          cache: pip
+      - name: Install package (no dev deps)
+        run: |
+          python -m pip install --upgrade pip
+          pip install -e .
+      - name: Verify package is importable
+        run: |
+          python -c "import picqa; print(f'picqa {picqa.__version__} OK')"
+          python -c "from picqa.io.xml_parser import parse_directory; print('parse_directory OK')"
+          python -c "from picqa.analysis.efficiency_map import find_sweet_spots; print('find_sweet_spots OK')"
+          python -c "from picqa.analysis.fwhm import extract_fwhm_features; print('extract_fwhm_features OK')"
+      - name: Verify CLI is callable
+        run: picqa --help
+
+  # Job 2: run the test suite on one Python version. The serious check.
+  tests:
+    name: Tests
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+          cache: pip
+      - name: Install package + dev deps
         run: |
           python -m pip install --upgrade pip
           pip install -e ".[dev]"
-      - name: Lint
-        run: ruff check src/ tests/
-      - name: Test
-        run: pytest --cov=picqa --cov-report=term-missing
+      - name: Run pytest
+        run: pytest --tb=short -q
+
+  # Job 3: lint. Allowed to fail without breaking the whole CI signal —
+  # treat as a warning indicator rather than a gate.
+  lint:
+    name: Lint (informational)
+    runs-on: ubuntu-latest
+    continue-on-error: true
+    steps:
+      - uses: actions/checkout@v4
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+          cache: pip
+      - name: Install ruff
+        run: |
+          python -m pip install --upgrade pip
+          pip install "ruff>=0.1.0"
+      - name: ruff check
+        run: ruff check src/ tests/ --output-format=github

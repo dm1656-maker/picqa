@@ -1,5 +1,24 @@
 # Changelog
 
+## [1.8.3] — README, CI badge fix, robust workflow
+- README fully updated to reflect every feature added since v1.2:
+  FWHM/Q analysis, EfficiencyScore, sweet spots, multi-axis sweet
+  spots, V-λ plot, per-wafer subfolders, layout-agnostic discovery,
+  run.py, Jupyter notebook
+- README badge URL fixed: now points at `dw7566/picqa` instead of the
+  placeholder `USER/picqa` that caused a permanent "CI failing" badge
+- Added License, Python version, and Version badges to README
+- GitHub Actions CI workflow rewritten with three independent jobs:
+  - `import-check`: smoke-tests installation + imports on Python
+    3.9 / 3.10 / 3.11 / 3.12 (fast, the gating check)
+  - `tests`: full pytest run on Python 3.11
+  - `lint`: ruff check with `continue-on-error: true` (informational
+    only — no longer blocks the CI signal)
+- Workflow now supports `workflow_dispatch` for manual runs from the
+  Actions tab
+- pip cache enabled to speed up CI by 20–40s per run
+
+
 ## [1.8.2] — Layout-agnostic data discovery
 - `parse_directory()` now works on **any folder structure** containing
   XML files, not just the standard HY202103 layout

@@ -1,218 +1,295 @@
 # picqa — Photonic IC Quality Analyzer
 
-[![CI](https://github.com/dw7566/picqa/actions/workflows/ci.yml/badge.svg)](https://github.com/dw7566/picqa/actions)
+[![CI](https://github.com/dw7566/picqa/actions/workflows/ci.yml/badge.svg)](https://github.com/dw7566/picqa/actions/workflows/ci.yml)
+[![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](https://opensource.org/licenses/MIT)
+[![Python](https://img.shields.io/badge/python-3.9%2B-blue.svg)](https://www.python.org/downloads/)
+[![Version](https://img.shields.io/badge/version-1.8.2-green.svg)](https://github.com/dw7566/picqa/releases)
 
-A modular Python library and CLI for analyzing wafer-level test data from
-silicon photonic process runs. Designed around the HY202103 dataset format
-(LION1 maskset, 1310 nm O-band devices).
+실리콘 포토닉스 웨이퍼 측정 데이터를 분석하는 모듈식 Python 라이브러리와 CLI.
+HY202103 데이터셋 (LION1 maskset, O-band 1310 nm + C-band 1550 nm) 분석에
+end-to-end로 검증됨.
+
+A modular Python library and CLI for wafer-level analysis of silicon photonic
+test data. Originally designed for the HY202103 dataset (LION1 maskset, O- and
+C-band devices), but layout-agnostic — works on any OIO-format XML dataset.
+
+---
 
 ## Features
 
-- **Pluggable XML parser** for OIO measurement files (MZM and PN modulator
-  variants supported)
-- **Band-agnostic extraction** — O/E/S/C/L/U bands are detected automatically
-  from the XML's `WL` design parameter or from test-site naming, so the same
-  pipeline handles 1310 nm and 1550 nm devices side by side
-- **Per-device feature extractors** (MZM, PN modulator, photodetector;
-  waveguide stub)
-- **Length-dependent analysis** for PN modulators: per-µm doping loss and
-  electroabsorption modulation efficiency by linear fit across three
-  segment lengths
-- **Wafer-level uniformity (project 1)**: center-vs-edge comparison,
-  radial dependence, FSR-to-index-variation mapping, IV uniformity
-- **V-phi extraction (project 2)**: Vπ, Vπ·L, and extinction ratio derived
-  from the bias-dependent notch shift; six-panel detailed analysis figure
-- **Cross-parameter efficiency analysis**: combines all measured parameters
-  into a single per-die EfficiencyScore (0–1), identifies sweet-spot
-  positions consistently producing best devices across wafers
-- **Spec-based yield calculation** from a YAML rule file
-- **Automatic failed-contact detection** via leakage + tuning-slope thresholds
-- **Publication-quality plots**: IV curves, transmission spectra, bias-shift
-  comparisons, wafer maps, six-panel MZM summary, PN length-dependence,
-  PN trade-off summary, radial-IL trend, center-vs-edge boxplots, V-φ curves,
-  Vπ distribution, six-panel V-π·L analysis, **efficiency wafer map**,
-  **sweet-spot map**
-- **Markdown report generator** that bundles inventory, statistics,
-  yield results, MZM features, PN features, project-1 uniformity, project-2
-  V-phi, **efficiency analysis**, and figures into one file (14 figures + 16 CSVs)
-- **Per-die inspection commands**: `picqa show` and `picqa list` for
-  fast terminal-based browsing of measurements
-- **CLI** for every operation — no GUI, no notebook required
+### Data parsing & extraction
+- **Layout-agnostic XML discovery** (v1.8.2+): point picqa at any folder of
+  OIO XML files; folder structure is auto-detected, session IDs are derived
+  from the XML's `CreationDate` when no `YYYYMMDD_HHMMSS` folder is present
+- **Band-agnostic**: O/E/S/C/L/U bands detected automatically from the XML's
+  `WL` design parameter or test-site naming
+- **Per-device feature extractors**: MZ modulator, PN modulator (3 segment
+  lengths with length-dependent fits), photodetector, waveguide
+
+### Modulator analysis
+- **MZM features**: FSR, |dλ/dV|, Peak IL, leakage current, ER
+- **Phase analysis (Project 2)**: Vπ, Vπ·L figure of merit, extinction ratio
+  derived from bias-dependent notch shift
+- **PN length dependence**: per-µm doping loss and electroabsorption
+  modulation efficiency by linear fit across 500/1500/2500 µm segments
+- **FWHM and Q-factor** (v1.7+): -3 dB FWHM of transmission peaks with
+  polynomial envelope subtraction; Q = λ/FWHM for spectral selectivity
+
+### Wafer-level analysis
+- **Project 1 uniformity**: center-vs-edge comparison, radial dependence,
+  FSR-to-index-variation mapping, IV uniformity
+- **EfficiencyScore** (v1.5+): per-die composite score combining Vπ, ER, IL,
+  leakage, Q-factor, FSR with robust 5–95% min-max normalisation
+- **Sweet spot detection** (v1.5+): die positions consistently in the top
+  tier across multiple wafers
+- **Multi-axis sweet spots** (v1.8+): independent analysis per axis
+  (EfficiencyScore, Q-factor, FWHM, Vπ) plus combined output flagging
+  positions strong on 2+ axes — the most actionable binning input
+
+### Visualisation
+- **Per-wafer subfolders** (v1.6+): each (Wafer, Band) gets its own
+  `figures/D08_O/` etc. with the full plot set for its representative die
+- **V-λ plot** (v1.6+): direct visualisation of wavelength modulation
+  efficiency (dλ/dV) as a single panel with linear fit and annotated points
+- **FWHM annotated illustration**: textbook-style figure with peak line,
+  half-max line, edges, FWHM arrow
+- **Wafer maps**: per-parameter and combined; FWHM map uses reversed colormap
+  so brighter = better regardless of metric direction
+- **Six-panel V-π·L analysis**: spectra, normalised, peak focus, IV,
+  phase-V, Vπ·L-V — full publication-quality output
+
+### Reporting & automation
+- **`run.py`** (v1.8.1+): single command produces every CSV, figure, and the
+  integrated Markdown report
+- **`picqa_analysis.ipynb`** (v1.8.1+): step-by-step Jupyter notebook with
+  Korean commentary; IPython imports are defensive so it also runs as a
+  plain Python script
+- **CLI** for every operation; no GUI required
+- **Markdown report generator** that bundles every analysis result and
+  every figure into one file
+
+---
 
 ## Installation
 
 ```bash
-git clone <repo-url>
+git clone https://github.com/dw7566/picqa.git
 cd picqa
 pip install -e ".[dev]"
 ```
 
+Python 3.9 or newer is required.
+
+---
+
 ## Dataset setup
 
-**The picqa package does not bundle measurement data.** Distribute data
-separately to keep the package small (the HY202103 dataset alone is
-~480 MB raw, ~220 MB zipped).
-
-Expected directory layout:
-
-```
-HY202103_data/                       ← root, name freely changeable
-├── D07/                             ← one folder per wafer
-│   └── 20190715_190855/             ← one folder per measurement session
-│       ├── DCM_LMZC/                ← one folder per test site
-│       │   └── *.xml                ← OIO-format measurement XML files
-│       ├── PCM_PSLCTE_P1N1/
-│       └── ...
-├── D08/
-├── D23/
-└── D24/
-```
+**picqa does not bundle measurement data.** The package is distributed
+separately to keep it small (the HY202103 dataset is ~480 MB raw).
 
 ### Folder layout — flexible
 
-picqa is **layout-agnostic** as of v1.8.2. It recursively finds every
-``.xml`` file under your data directory and reads wafer / die / band
-information from inside each file, so the folder structure on disk can
-be anything that makes sense to you. All three layouts below work
-identically:
+As of v1.8.2, picqa works on any folder containing OIO XML files. All three
+layouts below are equivalent:
 
-```
-# Standard HY202103 layout (recommended)
+```text
+# Standard HY202103 layout
 data/
 ├── D07/20190715_190855/<files>.xml
 ├── D08/20190526_082853/<files>.xml
 └── ...
 
-# Arbitrary nesting
+# Arbitrary nesting (folder names don't matter)
 data/
 ├── 내폴더/뭐든/*.xml
 └── ...
 
 # Completely flat
 data/
-└── *.xml         ← all 700+ XMLs in one folder
+└── *.xml                  ← all 700+ XMLs in one folder
 ```
 
-In layouts without a ``YYYYMMDD_HHMMSS`` session folder, picqa
-auto-derives a session ID from each XML's ``CreationDate`` (1-minute
-buckets), so dies measured close in time are still grouped correctly.
+When no `YYYYMMDD_HHMMSS` folder is present, picqa derives a session ID from
+each XML's `CreationDate` attribute, bucketed into 1-minute windows so
+measurements taken close in time stay grouped.
 
 ### If you have HY202103.zip
 
 ```bash
+# Linux / macOS
+unzip HY202103.zip
+mv HY202103 HY202103_data
+
 # Windows PowerShell
 Expand-Archive HY202103.zip -DestinationPath .
-Rename-Item HY202103 data
-
-# Linux/macOS
-unzip HY202103.zip
-mv HY202103 data
+Rename-Item HY202103 HY202103_data
 ```
 
-Then pass `--data HY202103_data` to `run.py` or the CLI. The default in
-all entry points assumes `HY202103_data` lives at the project root, so
-if you keep that name everything works without extra flags.
-
-### If you don't have the dataset
-
-Request it from your course coordinator / data source. picqa is a
-library — analysis you can apply to any compatible dataset, not the
-data itself.
+---
 
 ## Quickstart
 
-The fastest way to get every result for a fresh dataset is the bundled
-one-shot script:
+### Option A — one-shot script (recommended for fresh datasets)
 
 ```bash
-# Run the entire pipeline (≈ 70 s on the HY202103 dataset)
-python run.py --data ./data --out ./results
-# → ./results/report.md          ← integrated Markdown report
-# → ./results/figures/           ← 51 plots (per-wafer subfolders included)
-# → ./results/efficiency_scored.csv, combined_sweet_spots.csv, …
+# Full pipeline (~70 s on HY202103): every CSV, every figure, the report
+python run.py --data ./HY202103_data --out ./results
+
+# Quick mode (~15 s): parse + extract + score only, no plots
+python run.py --quick
+
+# Custom paths
+python run.py --data /path/to/xml --out /path/to/results
 ```
 
-For a step-by-step walkthrough with commentary, open the bundled
-notebook:
+Produces:
+- `results/report.md` — integrated Markdown report
+- `results/figures/` — 50+ plots (including per-wafer subfolders)
+- `results/*.csv` — 16 data files (features, yield, sweet spots, …)
+
+### Option B — Jupyter notebook (for step-by-step exploration)
 
 ```bash
 jupyter notebook picqa_analysis.ipynb
 ```
 
-It runs the same analysis in 8 sections, explains each step, and
-displays the figures inline. The notebook is tolerant of missing
-IPython (e.g. when executed as a plain Python script) — it falls back
-to printing image paths.
+Eight sections walk through the analysis with commentary, displaying each
+figure inline. The notebook also works as a plain Python script — IPython
+imports are defensive and fall back to printing image paths.
 
-### CLI individual commands
+### Option C — individual CLI commands
 
 ```bash
-# 1) See what's in the dataset
-picqa inventory ./HY202103
+# See what's in the dataset
+picqa inventory ./HY202103_data
 
-# 2) Extract MZM features into a CSV
-picqa extract mzm ./HY202103 -o ./out/features.csv
+# Extract MZM features
+picqa extract mzm ./HY202103_data -o ./out/features.csv
 
-# 3) Extract PN modulator features (per-segment + per-die length fit)
-picqa extract pn ./HY202103 -o ./out/pn_segments.csv
-
-# 4) Plot a six-panel MZM summary
-picqa plot summary ./out/features.csv -o ./out/summary.png
-
-# 5) Plot PN length dependence and trade-off summary
-picqa plot pn_length ./out/pn_segments.csv -o ./out/pn_length.png
-picqa plot pn_summary ./out/pn_segments_lengthfit.csv -o ./out/pn_summary.png
-
-# 6) Compute MZM yield against a spec
+# Compute MZM yield against a spec
 picqa yield ./out/features.csv \
-    --spec configs/mzm_spec.yaml \
-    --family mzm \
+    --spec configs/mzm_spec.yaml --family mzm \
     -o ./out/yield.csv
 
-# 7) Generate a one-shot Markdown report with all figures (MZM + PN)
-picqa report ./HY202103 -o ./out/report \
+# FWHM / Q-factor extraction with annotated plot
+picqa fwhm ./HY202103_data -o ./out/fwhm
+
+# Multi-axis sweet spot analysis
+picqa efficiency ./out/features.csv \
+    --phase ./out/phase.csv --fwhm ./out/fwhm/fwhm_features.csv \
+    -o ./out/efficiency
+
+# Generate the full integrated report
+picqa report ./HY202103_data --output-dir ./out/report \
     --spec configs/mzm_spec.yaml --family mzm
 ```
+
+---
 
 ## Library usage
 
 ```python
 from picqa.io.xml_parser import parse_directory
-from picqa.extract.mzm import extract_mzm_features
-from picqa.analysis.yield_calc import load_spec, evaluate_yield
+from picqa.extract.mzm import extract_mzm_features, MZM_TEST_SITES
+from picqa.analysis.fwhm import extract_fwhm_features
+from picqa.analysis.phase_extraction import extract_phase_features
+from picqa.analysis.efficiency_map import (
+    compute_efficiency_score,
+    find_sweet_spots_multi_metric,
+    find_combined_sweet_spots,
+)
 
-measurements = parse_directory("./HY202103", test_site="DCM_LMZO")
-features = extract_mzm_features(measurements)
+# 1. Parse all XML files
+measurements = parse_directory("./HY202103_data",
+                               test_site=list(MZM_TEST_SITES))
 
-spec = load_spec("configs/mzm_spec.yaml", "mzm")
-evaluated = evaluate_yield(features, spec)
-print(evaluated["Pass"].mean())  # overall yield as a fraction
+# 2. Extract features
+mzm    = extract_mzm_features(measurements)
+phase  = extract_phase_features(measurements, mzm)
+fwhm   = extract_fwhm_features(measurements, feature="peak")
+
+# 3. Score every die
+keys = ["Wafer", "Session", "Die"]
+merged = (mzm
+    .merge(phase[keys + ["Vpi_V", "ER_at_-2V_dB"]], on=keys, how="left")
+    .merge(fwhm[keys + ["FWHM_nm", "Q_factor"]], on=keys, how="left"))
+scored = compute_efficiency_score(merged[~merged["FailedContact"]])
+
+# 4. Find sweet spots across multiple quality axes
+multi    = find_sweet_spots_multi_metric(scored)
+combined = find_combined_sweet_spots(multi, min_axes_agreeing=2)
+print(combined)  # positions strong on 2+ quality metrics
 ```
+
+---
 
 ## Project layout
 
-```
+```text
 src/picqa/
     io/         XML parsing + typed data containers
-    extract/    Per-device feature extraction
-    analysis/   Statistics, yield, outlier detection
+    extract/    Per-device feature extraction (MZM, PN, photodetector)
+    analysis/   Statistics, yield, efficiency score, FWHM/Q,
+                  sweet spots (single- and multi-axis)
     viz/        Plotting (matplotlib, file output only)
     report/     Markdown report generation
     cli.py      Entry point exposed as `picqa`
-tests/          pytest unit + integration tests
-examples/       Usage scripts
+tests/          47 unit + integration tests
+examples/       Usage scripts and notebooks
 configs/        YAML spec files
-docs/           Architecture and data-format notes
+docs/           Architecture and analysis-method notes
+run.py          One-shot analysis runner
+picqa_analysis.ipynb   Step-by-step Jupyter notebook
 ```
 
-See `docs/architecture.md` for the design rationale and module
-responsibilities.
+See `docs/architecture.md` for design rationale.
+
+---
+
+## Verified on the HY202103 dataset
+
+The full pipeline has been exercised end-to-end on the HY202103 process run
+(4 wafers × 14 dies × 13 test sites, 709 XML files, 484.8 MB).
+
+### Process group analysis
+The wafers split cleanly into two groups by their PN doping concentration:
+
+| Group | Wafers | EfficiencyScore | Vπ | PN doping loss |
+|---|---|---|---|---|
+| **A (strong doping)** | D07, D08 | ≈ 0.70 | 27–29 V | -11.3 dB/cm |
+| **B (weak doping)** | D23, D24 | ≈ 0.35 | 36–39 V | -5.5 dB/cm |
+
+### Spatial pattern (consistent across all wafers)
+- Quadrants: **SE > NE > NW > SW** (left side of wafer is weak)
+- 4 single-axis sweet spots on EfficiencyScore: (0,3), (0,-3), (2,0), (2,-3)
+
+### Multi-axis sweet spots (v1.8+)
+Positions that are simultaneously sweet on 2+ independent quality axes:
+
+| Position | Axes | Note |
+|---|---|---|
+| **(0, -3)** | Efficiency + Vπ | Best for variability AND modulation strength |
+| **(2, -3)** | Efficiency + Q | Most robust binning candidate (independent axes) |
+| (-3,-3), (-1,-1), (2,2), (-4,0), (-3,2) | FWHM + Q | Spectral selectivity only |
+
+### FWHM / Q-factor
+- O-band MZMs (D23, D24, D08-O): median Q ≈ 273, FWHM ≈ 4.8 nm
+- C-band MZMs (D07, D08-C): median Q ≈ 222, FWHM ≈ 7.0 nm
+- Within-wafer FWHM spread σ < 0.2 nm → very uniform geometry
+
+### Tests
+**47 unit and integration tests pass** (`pytest` or `python run_tests_no_pytest.py`).
+
+---
 
 ## Development
 
 ```bash
-# Tests with coverage
+# Run tests
 pytest --cov=picqa
+
+# Run tests without pytest installed (bundled runner)
+python run_tests_no_pytest.py
 
 # Lint
 ruff check src/ tests/
@@ -221,35 +298,32 @@ ruff check src/ tests/
 python -m build
 ```
 
-## Verified on the HY202103 dataset
+---
 
-The full pipeline has been exercised end-to-end on the HY202103 process run
-(4 wafers × up to 14 dies × 13 test sites, 709 XML files, 484.8 MB):
+## Version history
 
-- **MZM extraction (multi-band)**: 98 measurements (D07 C-band 14 + D08 O+C 28
-  + D23 O 28 + D24 O 28). The same call now picks up D07 (which is C-band
-  only) and the C-band MZMs that exist on D08. FSR scales 1.46× from O-band
-  (9.83 nm) to C-band (14.3 nm) — consistent with group-index theory.
-- **Failed contact**: 28 / 98 dies automatically flagged, matching the two
-  re-test sessions where the probe lost electrical contact.
-- **PN modulator (PCM_PSLOTE_P1N1 + PCM_PSLCTE_P1N1)**: 84 dies × 3 segment
-  lengths (500/1500/2500 µm) = 252 segment rows. D07 C-band PN shows ~1.4×
-  larger electroabsorption than D08 O-band, in line with carrier-absorption
-  scaling as λ².
-- **Wafer uniformity (project 1)**: grating-coupler IL is consistently
-  better at the wafer center than at the edge by ~1.6 dB, with significantly
-  smaller die-to-die spread.
-- **V-phi extraction (project 2)**: Vπ ≈ 27 V on D08, ≈ 29 V on D07,
-  36–39 V on D23/D24; extinction ratio ≈ 37 dB on all wafers.
-- **MZM yield against the bundled spec**: D08 = 100 % (14/14, O-band only),
-  D23 = 50 % (14/28), D24 = 50 % (14/28).
-- **One-shot reporting**: 11+ figures + 11 CSVs + 1 Markdown report
-  generated by a single `picqa report` call.
-- **Tests**: 62 unit and integration tests pass (31 automated + 31 manual).
+See [CHANGELOG.md](CHANGELOG.md) for the full release history. Recent
+highlights:
+
+- **v1.8.2** — Layout-agnostic data discovery; session ID auto-derived
+  from `CreationDate` when no standard folder exists
+- **v1.8.1** — `run.py` one-shot runner; `picqa_analysis.ipynb` notebook
+- **v1.8.0** — Multi-axis sweet spot analysis (Q + FWHM + Vπ + Efficiency)
+- **v1.7.x** — FWHM and Q-factor analysis; FWHM wafer maps
+- **v1.6.x** — V-λ plot; per-wafer figure subfolders
+- **v1.5.x** — EfficiencyScore composite metric; sweet spot detection
+- **v1.4.x** — Six-panel V-π·L analysis figure
+- **v1.3.x** — Multi-band (O + C) support; D07 C-band-only wafer
+- **v1.2.x** — Projects 1 (uniformity) and 2 (V-φ) integration
+- **v1.1.x** — PN modulator support
+- **v1.0.0** — First stable release: MZM + yield + Markdown report
+
+---
 
 ## License
 
-MIT
+MIT — see [LICENSE](LICENSE).
 
 ## Author
-JAEHYEOK https://github.com/dw7566
+
+JAEHYEOK — <https://github.com/dw7566>

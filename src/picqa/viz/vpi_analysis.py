@@ -27,7 +27,6 @@ from pathlib import Path
 
 import matplotlib.pyplot as plt
 import numpy as np
-from scipy.optimize import curve_fit
 
 from picqa.analysis.phase_extraction import parse_phaseshifter_length_um
 from picqa.io.schemas import Measurement, WavelengthSweep

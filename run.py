@@ -31,7 +31,7 @@ def parse_args() -> argparse.Namespace:
     )
     p.add_argument("--data", type=Path, default=Path("data"),
                    help="Root directory containing wafer subfolders "
-                        "(e.g. data/D07/...)")
+                        "(e.g. HY202103_data/D07/...)")
     p.add_argument("--out", type=Path, default=Path("results"),
                    help="Output directory; will be created if missing")
     p.add_argument("--spec", type=Path,
@@ -116,12 +116,12 @@ def main() -> int:
         print("Expected layout:", file=sys.stderr)
         print("    <data-dir>/<WaferID>/<SessionID>/<TestSite>/*.xml",
               file=sys.stderr)
-        print("e.g. data/D08/20190526_082853/DCM_LMZO/<files>.xml",
+        print("e.g. HY202103_data/D08/20190526_082853/DCM_LMZO/<files>.xml",
               file=sys.stderr)
         print("", file=sys.stderr)
         print("If you have the HY202103 dataset:", file=sys.stderr)
         print("    1. Unzip HY202103.zip into the project root", file=sys.stderr)
-        print("    2. Rename the extracted folder to 'data' "
+        print("    2. Rename the extracted folder to 'HY202103_data' "
               "(or pass --data <your-folder>)", file=sys.stderr)
         print("    3. Re-run this script", file=sys.stderr)
         print("", file=sys.stderr)

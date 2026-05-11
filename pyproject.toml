@@ -4,12 +4,14 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "picqa"
-version = "1.8.2"
+version = "1.8.3"
 description = "Photonic IC Quality Analyzer — wafer-level test data analysis toolkit"
 readme = "README.md"
 requires-python = ">=3.9"
 license = { text = "MIT" }
-authors = [{ name = "PICQA contributors" }]
+authors = [{ name = "Jaehyeok" }]
+maintainers = [{ name = "Jaehyeok" }]
+urls = { Homepage = "https://github.com/dw7566/picqa", Repository = "https://github.com/dw7566/picqa", Issues = "https://github.com/dw7566/picqa/issues" }
 keywords = ["silicon-photonics", "wafer-test", "metrology", "data-analysis"]
 classifiers = [
     "Development Status :: 4 - Beta",
