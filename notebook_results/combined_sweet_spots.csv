@@ -1,0 +1,8 @@
+DieCol,DieRow,n_axes,axes_str,total_n_wafers_top
+0,-3,2,EfficiencyScore+Vpi_V,6
+-3,-3,2,FWHM_nm+Q_factor,6
+2,-3,2,EfficiencyScore+Q_factor,5
+-1,-1,2,FWHM_nm+Q_factor,4
+2,2,2,FWHM_nm+Q_factor,4
+-4,0,2,FWHM_nm+Q_factor,4
+-3,2,2,FWHM_nm+Q_factor,4
