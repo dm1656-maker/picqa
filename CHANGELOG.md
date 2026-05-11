@@ -1,5 +1,20 @@
 # Changelog
 
+## [1.8.1] — run.py and analysis notebook
+- New `run.py` at the project root: one command to produce every
+  analysis output for a dataset
+  - `python run.py` (uses defaults) or `python run.py --data PATH --out PATH`
+  - `--quick` mode runs only parse + extract + score (no plots, no
+    integrated report) for fast iteration
+  - Pretty per-step timing and progress output
+- New `picqa_analysis.ipynb` Jupyter notebook with 8 sections
+  documenting the full workflow with commentary
+  - Defensive IPython import so the notebook can also be executed as
+    a plain script (falls back to printing image paths)
+  - All 16 code cells verified to run end-to-end without errors
+- README updated with both new entry points in the Quickstart section
+
+
 ## [1.8.0] — Multi-axis sweet spot analysis (FWHM/Q + Vπ + Efficiency)
 - `find_sweet_spots()` generalised to accept any score column with a
   ``higher_is_better`` flag; backward-compatible with default
