@@ -49,6 +49,31 @@ pip install -e ".[dev]"
 
 ## Quickstart
 
+The fastest way to get every result for a fresh dataset is the bundled
+one-shot script:
+
+```bash
+# Run the entire pipeline (≈ 70 s on the HY202103 dataset)
+python run.py --data ./HY202103 --out ./results
+# → ./results/report.md          ← integrated Markdown report
+# → ./results/figures/           ← 51 plots (per-wafer subfolders included)
+# → ./results/efficiency_scored.csv, combined_sweet_spots.csv, …
+```
+
+For a step-by-step walkthrough with commentary, open the bundled
+notebook:
+
+```bash
+jupyter notebook picqa_analysis.ipynb
+```
+
+It runs the same analysis in 8 sections, explains each step, and
+displays the figures inline. The notebook is tolerant of missing
+IPython (e.g. when executed as a plain Python script) — it falls back
+to printing image paths.
+
+### CLI individual commands
+
 ```bash
 # 1) See what's in the dataset
 picqa inventory ./HY202103
