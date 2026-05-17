@@ -1,7 +1,6 @@
 """Plotting utilities. Each function writes a PNG and returns the path."""
 
 from picqa.viz.iv_plot import plot_iv_grid
-from picqa.viz.pn_plot import plot_pn_length_dependence, plot_pn_summary
 from picqa.viz.spectrum_plot import plot_bias_shift, plot_spectra_grid
 from picqa.viz.summary_plot import plot_summary
 from picqa.viz.uniformity_plot import (
@@ -28,8 +27,6 @@ __all__ = [
     "plot_metric_wafermap",
     "plot_all_metric_wafermaps",
     "plot_summary",
-    "plot_pn_length_dependence",
-    "plot_pn_summary",
     # project 1
     "plot_radial_dependence",
     "plot_center_vs_edge",

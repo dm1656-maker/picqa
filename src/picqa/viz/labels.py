@@ -86,18 +86,6 @@ _LABELS: dict[str, dict[str, str]] = {
     "grating_il_radius": {"ko": "그레이팅 커플러 IL의 반경 의존성",
                           "en": "Grating coupler IL vs wafer radius"},
 
-    # PN modulator
-    "pn_il_drop_title": {"ko": "PN 변조기 — REF 대비 IL 강하",
-                         "en": "PN modulator — IL drop vs REF"},
-    "pn_modulation_title": {"ko": "PN 변조기 — 전기흡수 효율",
-                            "en": "PN modulator — electroabsorption efficiency"},
-    "pn_loss_vs_mod": {"ko": "도핑 손실 vs 변조 효율 trade-off",
-                       "en": "Doping loss vs modulation efficiency"},
-    "loss_per_um": {"ko": "단위 길이당 손실 (dB/cm)",
-                    "en": "Loss per length (dB/cm)"},
-    "mod_per_um": {"ko": "단위 길이당 변조 효율 (dB/V/mm)",
-                   "en": "Modulation per length (dB/V/mm)"},
-
     # Annotations
     "linear_fit": {"ko": "선형 fit", "en": "Linear fit"},
     "median": {"ko": "중앙값", "en": "median"},
