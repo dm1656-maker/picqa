@@ -201,19 +201,6 @@ def cmd_plot(args: argparse.Namespace) -> int:
             print("No working die with clear notches found", file=sys.stderr)
             return 2
         plot_vpi_analysis(target, out)
-    elif args.kind == "fwhm_wafermap":
-        # FWHM (and Q-factor) wafer maps per (Wafer, Band)
-        # Input is either a CSV from `picqa fwhm` or a data directory
-        from picqa.viz.wafer_map import plot_fwhm_wafermap
-        in_path = Path(args.input)
-        if in_path.is_file() and in_path.suffix.lower() == ".csv":
-            df = pd.read_csv(args.input)
-        else:
-            from picqa.analysis.fwhm import extract_fwhm_features
-            measurements = parse_directory(args.input, test_site=list(MZM_TEST_SITES))
-            df = extract_fwhm_features(measurements,
-                                       bias_v=args.bias, feature="peak")
-        plot_fwhm_wafermap(df, out)
     else:
         print(f"Unknown plot kind: {args.kind}", file=sys.stderr)
         return 2
@@ -444,75 +431,6 @@ def cmd_list(args: argparse.Namespace) -> int:
     return 0
 
 
-def cmd_fwhm(args: argparse.Namespace) -> int:
-    """Extract FWHM and Q-factor for every die.
-
-    Writes:
-    * fwhm_features.csv         — die-level table (FWHM, Q, centre wavelength)
-    * fwhm_annotated.png        — single-die illustrative plot
-    * q_factor_distribution.png — population-level summary
-    """
-    from picqa.analysis.fwhm import extract_fwhm_features
-    from picqa.viz.fwhm_plot import plot_fwhm_annotated, plot_q_factor_distribution
-
-    out_dir = Path(args.output_dir)
-    out_dir.mkdir(parents=True, exist_ok=True)
-
-    measurements = parse_directory(args.data_dir, test_site=list(MZM_TEST_SITES))
-    df = extract_fwhm_features(measurements,
-                               bias_v=args.bias, feature=args.feature,
-                               drop_db=args.drop_db, flatten=not args.no_flatten)
-    df.to_csv(out_dir / "fwhm_features.csv", index=False)
-
-    n_valid = int(df["Q_factor"].notna().sum())
-    print(f"\nExtracted {n_valid} / {len(df)} valid FWHM measurements")
-    if n_valid:
-        print(f"\nPer-wafer Q summary ({args.feature}):")
-        per_wafer = (df.dropna(subset=["Q_factor"])
-                       .groupby("Wafer")[["FWHM_nm", "Q_factor"]]
-                       .agg(["count", "median", "std"]).round(2))
-        print(per_wafer.to_string())
-
-    # Pick a representative die for the annotated plot — use (0,0) closest
-    target = None
-    for m in measurements:
-        if m.die_col == 0 and m.die_row == 0 and m.iv is not None \
-                and abs(m.iv.at(-1.0)) > 1e-9:
-            target = m
-            break
-    if target is None and measurements:
-        # fallback to first working die
-        for m in measurements:
-            if m.iv is not None and abs(m.iv.at(-1.0)) > 1e-9:
-                target = m
-                break
-    if target is not None:
-        plot_fwhm_annotated(
-            target, out_dir / "fwhm_annotated.png",
-            bias_v=args.bias, feature=args.feature,
-            drop_db=args.drop_db, flatten=not args.no_flatten,
-        )
-        print(f"\nAnnotated plot saved → {out_dir/'fwhm_annotated.png'}")
-
-    if n_valid:
-        plot_q_factor_distribution(
-            df.dropna(subset=["Q_factor"]),
-            out_dir / "q_factor_distribution.png",
-        )
-        print(f"Distribution plot saved → {out_dir/'q_factor_distribution.png'}")
-
-        from picqa.viz.wafer_map import plot_fwhm_wafermap
-        plot_fwhm_wafermap(
-            df.dropna(subset=["Q_factor"]),
-            out_dir / "fwhm_wafermap.png",
-            show_q=True, per_band_scale=True,
-        )
-        print(f"Wafer map saved → {out_dir/'fwhm_wafermap.png'}")
-
-    print(f"\nAll outputs saved to {out_dir}")
-    return 0
-
-
 def cmd_yield(args: argparse.Namespace) -> int:
     df = pd.read_csv(args.features)
     spec = load_spec(args.spec, args.family)
@@ -578,20 +496,6 @@ def cmd_efficiency(args: argparse.Namespace) -> int:
             print(f"Warning: phase file not found at {args.phase}, "
                   f"continuing without Vπ/ER", file=sys.stderr)
 
-    # Try to merge FWHM/Q features for spectral-selectivity scoring
-    if args.fwhm:
-        try:
-            fwhm = pd.read_csv(args.fwhm)
-            extra_cols = [c for c in ["FWHM_nm", "Q_factor", "Centre_nm"]
-                          if c in fwhm.columns]
-            if extra_cols:
-                fwhm_subset = fwhm[keys + extra_cols]
-                features = features.merge(fwhm_subset, on=keys, how="left")
-                print(f"Merged FWHM columns: {extra_cols}")
-        except FileNotFoundError:
-            print(f"Warning: FWHM file not found at {args.fwhm}, "
-                  f"continuing without FWHM/Q", file=sys.stderr)
-
     # Build config (allow per-wafer normalisation via flag)
     config = EfficiencyConfig()
     group_by = ["Wafer", "Band"] if args.normalise_per_wafer and "Band" in features.columns else None
@@ -610,7 +514,7 @@ def cmd_efficiency(args: argparse.Namespace) -> int:
     plot_efficiency_wafermap(scored, out_dir / "efficiency_wafermap.png")
     plot_sweet_spots(sweet, out_dir / "sweet_spots.png")
 
-    # Multi-metric (per-axis) sweet spots if FWHM/Q or Vπ are present
+    # Multi-metric (per-axis) sweet spots
     multi_sweet_combined = pd.DataFrame()
     try:
         from picqa.analysis.efficiency_map import (
@@ -788,7 +692,7 @@ def build_parser() -> argparse.ArgumentParser:
                     choices=["iv", "spectra", "wafermap", "summary",
                              "pn_length", "pn_summary",
                              "radial", "center_vs_edge", "vpi", "vphi",
-                             "vpi_analysis", "fwhm_wafermap"])
+                             "vpi_analysis"])
     sp.add_argument("input", help="data directory or features CSV depending on kind")
     sp.add_argument("--output", "-o", required=True)
     sp.add_argument("--bias", type=float, default=-2.0,
@@ -835,22 +739,6 @@ def build_parser() -> argparse.ArgumentParser:
     sp.add_argument("--output", "-o", default=None)
     sp.set_defaults(func=cmd_phase)
 
-    # FWHM and Q-factor
-    sp = sub.add_parser("fwhm",
-                        help="FWHM and Q-factor extraction from spectra")
-    sp.add_argument("data_dir")
-    sp.add_argument("--output-dir", "-o", required=True)
-    sp.add_argument("--bias", type=float, default=-2.0,
-                    help="DC bias at which to measure FWHM (default -2.0 V)")
-    sp.add_argument("--feature", default="peak", choices=["peak", "notch"],
-                    help="measure the FWHM of a transmission peak (default) "
-                         "or a notch (dip)")
-    sp.add_argument("--drop-db", type=float, default=3.0,
-                    help="dB level for the FWHM measurement (default 3.0 = -3 dB)")
-    sp.add_argument("--no-flatten", action="store_true",
-                    help="skip the grating-coupler envelope subtraction")
-    sp.set_defaults(func=cmd_fwhm)
-
     # efficiency (cross-parameter scoring + sweet-spot map)
     sp = sub.add_parser("efficiency",
                         help="combine all parameters into one die-quality score")
@@ -858,8 +746,6 @@ def build_parser() -> argparse.ArgumentParser:
                     help="MZM features CSV from `picqa extract mzm`")
     sp.add_argument("--phase", default=None,
                     help="optional phase features CSV (adds Vπ, ER to the score)")
-    sp.add_argument("--fwhm", default=None,
-                    help="optional FWHM features CSV (adds Q-factor to the score)")
     sp.add_argument("--output-dir", "-o", required=True)
     sp.add_argument("--top-n", type=int, default=10,
                     help="how many top dies to list (default 10)")

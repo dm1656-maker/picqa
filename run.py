@@ -88,7 +88,6 @@ def main() -> int:
             find_sweet_spots,
             find_sweet_spots_multi_metric,
         )
-        from picqa.analysis.fwhm import extract_fwhm_features
         from picqa.analysis.outlier import flag_failed_contacts
         from picqa.analysis.phase_extraction import extract_phase_features
         from picqa.extract.mzm import MZM_TEST_SITES, extract_mzm_features
@@ -145,7 +144,7 @@ def main() -> int:
 
     # ---------- The full pipeline ---------- #
     if args.quick:
-        # Quick mode: just parse + extract MZM + FWHM + phase
+        # Quick mode: just parse + extract MZM + phase
         with step("Parse XML files"):
             measurements = parse_directory(args.data,
                                            test_site=list(MZM_TEST_SITES))
@@ -163,19 +162,11 @@ def main() -> int:
             phase_df.to_csv(args.out / "phase_features.csv", index=False)
             print(f"  → {phase_df['Vpi_V'].notna().sum()} dies with valid Vπ")
 
-        with step("Extract FWHM / Q-factor"):
-            fwhm_df = extract_fwhm_features(measurements, feature="peak")
-            fwhm_df.to_csv(args.out / "fwhm_features.csv", index=False)
-            print(f"  → {fwhm_df['Q_factor'].notna().sum()} dies with valid Q")
-
         with step("Compute efficiency + sweet spots"):
             import pandas as pd
             keys = ["Wafer", "Session", "Die"]
             merged = mzm_df.merge(
                 phase_df[keys + ["Vpi_V", "Vpi_L_V_cm", "ER_at_-2V_dB"]],
-                on=keys, how="left",
-            ).merge(
-                fwhm_df[keys + ["FWHM_nm", "Q_factor"]],
                 on=keys, how="left",
             )
             working = merged[~merged["FailedContact"]].copy()

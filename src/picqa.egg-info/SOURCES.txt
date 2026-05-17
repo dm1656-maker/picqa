@@ -11,7 +11,6 @@ src/picqa.egg-info/requires.txt
 src/picqa.egg-info/top_level.txt
 src/picqa/analysis/__init__.py
 src/picqa/analysis/efficiency_map.py
-src/picqa/analysis/fwhm.py
 src/picqa/analysis/outlier.py
 src/picqa/analysis/phase_extraction.py
 src/picqa/analysis/statistics.py
