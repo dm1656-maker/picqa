@@ -14,7 +14,6 @@ from picqa.viz.uniformity_plot import (
 from picqa.viz.vpi_analysis import plot_vpi_analysis
 from picqa.viz.wafer_map import (
     plot_all_metric_wafermaps,
-    plot_fwhm_wafermap,
     plot_metric_wafermap,
     plot_wafermap,
     plot_wafermap_grid,
@@ -28,7 +27,6 @@ __all__ = [
     "plot_wafermap_grid",
     "plot_metric_wafermap",
     "plot_all_metric_wafermaps",
-    "plot_fwhm_wafermap",
     "plot_summary",
     "plot_pn_length_dependence",
     "plot_pn_summary",

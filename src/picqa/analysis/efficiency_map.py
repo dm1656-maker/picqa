@@ -44,21 +44,17 @@ DEFAULT_DIRECTIONS: dict[str, str] = {
     "Loss_per_um_dB_per_um": "min_abs", # less doping loss
     "Modulation_per_um_dB_per_V_per_um": "min_abs",  # higher mod efficiency = more negative slope
     "Q_factor": "max",                  # sharper resonance is better
-    "FWHM_nm": "min",                   # narrower FWHM is better
 }
 
 
 # Default metric weights. These can be overridden by the caller. Sum need not
-# equal 1; results are normalised at the end. Note: Q_factor and FWHM_nm are
-# strongly correlated (Q = λ/FWHM, so they encode the same information),
-# therefore only Q_factor is given weight by default. Including both would
-# effectively double-count spectral selectivity.
+# equal 1; results are normalised at the end.
 DEFAULT_WEIGHTS: dict[str, float] = {
     "Vpi_V": 2.0,                       # most important: actual modulation strength
     "ER_at_-2V_dB": 1.5,                # extinction ratio is core spec
     "PeakIL_dB": 1.0,                   # insertion loss
     "I_at_-1V_pA": 1.0,                 # leakage / contact quality
-    "Q_factor": 0.75,                   # spectral selectivity (FWHM-derived)
+    "Q_factor": 0.75,                   # spectral selectivity
     "FSR_nm": 0.5,                      # geometric uniformity
 }
 
@@ -277,11 +273,11 @@ def find_sweet_spots(
     ----------
     score_column : str
         Which column to rank by. Defaults to ``"EfficiencyScore"`` (the
-        composite metric); can be set to ``"Q_factor"``, ``"FWHM_nm"``,
-        ``"Vpi_V"`` etc. for axis-specific analysis.
+        composite metric); can be set to ``"Q_factor"``, ``"Vpi_V"`` etc.
+        for axis-specific analysis.
     higher_is_better : bool
         ``True`` (default) treats larger values as better (top tier). Set
-        to ``False`` for metrics like FWHM, Vπ, leakage where smaller is
+        to ``False`` for metrics like Vπ, leakage where smaller is
         better — the function will then look for the BOTTOM ``threshold_pct``
         percentile instead.
     """
@@ -339,7 +335,7 @@ def find_sweet_spots_multi_metric(
     metrics : list of (column, higher_is_better) tuples
         Each tuple specifies one analysis. Defaults cover the most useful
         per-axis views: efficiency (high=better), Q-factor (high=better),
-        FWHM (low=better), Vπ (low=better).
+        Vπ (low=better).
 
     Returns
     -------
@@ -352,7 +348,6 @@ def find_sweet_spots_multi_metric(
         metrics = [
             ("EfficiencyScore", True),
             ("Q_factor", True),
-            ("FWHM_nm", False),
             ("Vpi_V", False),
         ]
     out: dict[str, pd.DataFrame] = {}
@@ -720,7 +715,6 @@ def plot_combined_sweet_spots(
         axes_short = (r["axes_str"]
                       .replace("EfficiencyScore", "Eff")
                       .replace("Q_factor", "Q")
-                      .replace("FWHM_nm", "FWHM")
                       .replace("Vpi_V", "Vπ"))
         labels[(int(r["DieCol"]), int(r["DieRow"]))] = axes_short
 

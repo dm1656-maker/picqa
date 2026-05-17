@@ -301,57 +301,6 @@ def generate_report(
         logging.getLogger(__name__).warning("Per-wafer figures skipped: %s", exc)
         fig_paths["per_wafer"] = {}
 
-    # FWHM / Q-factor extraction (peak mode by default)
-    fwhm_df = pd.DataFrame()
-    try:
-        from picqa.analysis.fwhm import extract_fwhm_features
-        from picqa.viz.fwhm_plot import (
-            plot_fwhm_annotated,
-            plot_q_factor_distribution,
-        )
-        fwhm_df = extract_fwhm_features(measurements, feature="peak")
-        fwhm_df.to_csv(out_dir / "fwhm_features.csv", index=False)
-        # Annotated single-die figure - use the best die from features
-        good = features[~features.get("FailedContact", False)]
-        if not good.empty:
-            row0 = good.iloc[0]
-            target = next(
-                (m for m in measurements
-                 if m.wafer == row0["Wafer"]
-                 and m.session == row0["Session"]
-                 and m.die == row0["Die"]),
-                None,
-            )
-            if target is not None:
-                try:
-                    fig_paths["fwhm_annotated"] = plot_fwhm_annotated(
-                        target, fig_dir / "fwhm_annotated.png", feature="peak",
-                    )
-                except Exception:
-                    fig_paths["fwhm_annotated"] = None
-        # Population distribution
-        if fwhm_df["Q_factor"].notna().any():
-            try:
-                fig_paths["q_distribution"] = plot_q_factor_distribution(
-                    fwhm_df.dropna(subset=["Q_factor"]),
-                    fig_dir / "q_factor_distribution.png",
-                )
-            except Exception:
-                fig_paths["q_distribution"] = None
-            # FWHM and Q-factor wafer maps
-            try:
-                from picqa.viz.wafer_map import plot_fwhm_wafermap
-                fig_paths["fwhm_wafermap"] = plot_fwhm_wafermap(
-                    fwhm_df.dropna(subset=["Q_factor"]),
-                    fig_dir / "fwhm_wafermap.png",
-                    show_q=True, per_band_scale=True,
-                )
-            except Exception:
-                fig_paths["fwhm_wafermap"] = None
-    except Exception as exc:
-        import logging
-        logging.getLogger(__name__).warning("FWHM extraction skipped: %s", exc)
-
     # Cross-parameter efficiency analysis (combines MZM + phase metrics)
     efficiency_df = pd.DataFrame()
     sweet_df = pd.DataFrame()
@@ -380,15 +329,6 @@ def generate_report(
                 scoring_input = scoring_input.merge(
                     phase_df[keys + extra_cols], on=keys, how="left",
                 )
-        # Also merge FWHM/Q if available — adds spectral selectivity to the
-        # score so position analysis reflects ALL modulator quality axes.
-        if not fwhm_df.empty:
-            fwhm_cols = [c for c in ["FWHM_nm", "Q_factor", "Centre_nm"]
-                         if c in fwhm_df.columns]
-            if fwhm_cols:
-                scoring_input = scoring_input.merge(
-                    fwhm_df[keys + fwhm_cols], on=keys, how="left",
-                )
         # Skip failed-contact dies for fair scoring
         if "FailedContact" in scoring_input.columns:
             scoring_input = scoring_input[~scoring_input["FailedContact"]].copy()
@@ -407,7 +347,7 @@ def generate_report(
                 sweet_df, fig_dir / "sweet_spots.png",
             )
 
-            # Per-metric sweet spots (Q, FWHM, Vπ separately)
+            # Per-metric sweet spots (Q, Vπ separately)
             try:
                 multi = find_sweet_spots_multi_metric(efficiency_df)
                 if multi:
@@ -566,34 +506,6 @@ def generate_report(
             lines.append(_df_to_md(flat))
             lines.append("")
 
-    # FWHM and Q-factor
-    if not fwhm_df.empty and fwhm_df["Q_factor"].notna().any():
-        lines.append("## FWHM and Q-factor analysis")
-        lines.append("")
-        lines.append(
-            "FWHM (Full Width at Half Maximum) measures the spectral width "
-            "of a transmission peak at the -3 dB level (= 50 % linear "
-            "intensity). The Q-factor (= λ_centre / FWHM) is dimensionless "
-            "and quantifies how spectrally selective the device is — higher "
-            "is sharper. The polynomial envelope of the grating coupler is "
-            "subtracted before measurement so peaks appear flat near 0 dB."
-        )
-        lines.append("")
-        per_wafer_q = (
-            fwhm_df.dropna(subset=["Q_factor"])
-            .groupby(["Wafer", "Band"], dropna=False)[["FWHM_nm", "Q_factor"]]
-            .agg(["count", "median", "std"])
-            .round(2)
-        )
-        if not per_wafer_q.empty:
-            lines.append("### Per-wafer FWHM / Q summary")
-            lines.append("")
-            flat = per_wafer_q.copy()
-            flat.columns = [f"{a}_{b}" for a, b in flat.columns]
-            flat = flat.reset_index()
-            lines.append(_df_to_md(flat))
-            lines.append("")
-
     # Cross-parameter efficiency
     if not efficiency_df.empty:
         lines.append("## Cross-parameter efficiency analysis")
@@ -651,7 +563,7 @@ def generate_report(
             lines.append("")
             lines.append(
                 "Sweet-spot analysis was repeated separately for "
-                "EfficiencyScore, Q-factor, FWHM, and Vπ. The table below "
+                "EfficiencyScore, Q-factor, and Vπ. The table below "
                 "lists positions that landed in the top tier on **two or "
                 "more axes** — these are the strongest multi-criteria "
                 "candidates because no single metric is dominating the "
@@ -662,10 +574,7 @@ def generate_report(
             lines.append("")
             lines.append(
                 "**Interpretation:** positions tagged `Eff+Vπ` are good "
-                "for variability AND modulation strength. Positions tagged "
-                "`FWHM+Q` are good in spectral selectivity but may be "
-                "average on overall efficiency (since Q and FWHM measure "
-                "the same physical property). Positions matching "
+                "for variability AND modulation strength. Positions matching "
                 "`Eff+Q` are the most robust binning candidates because "
                 "they combine independent quality axes."
             )
@@ -734,18 +643,6 @@ def generate_report(
     if fig_paths.get("vpi_dist"):
         lines.append("### (Project 2) Vπ distribution and Vπ·L figure of merit")
         lines.append(f"![Vπ distribution]({fig_paths['vpi_dist'].relative_to(out_dir)})")
-        lines.append("")
-    if fig_paths.get("fwhm_annotated"):
-        lines.append("### FWHM annotated illustration")
-        lines.append(f"![FWHM]({fig_paths['fwhm_annotated'].relative_to(out_dir)})")
-        lines.append("")
-    if fig_paths.get("q_distribution"):
-        lines.append("### Q-factor distribution across wafers")
-        lines.append(f"![Q distribution]({fig_paths['q_distribution'].relative_to(out_dir)})")
-        lines.append("")
-    if fig_paths.get("fwhm_wafermap"):
-        lines.append("### FWHM and Q-factor wafer maps")
-        lines.append(f"![FWHM wafermap]({fig_paths['fwhm_wafermap'].relative_to(out_dir)})")
         lines.append("")
     if fig_paths.get("efficiency_map"):
         lines.append("### Cross-parameter efficiency map")
